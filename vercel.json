@@ -1,0 +1,101 @@
+{
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/shop",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/category/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/style/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/brand/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/price/:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/demo/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/listing/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/seller/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/brands",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/account",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sell",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/saved",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/messages",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reports",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/about",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/drafts",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/bundles",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/price-suggestions",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/bundle-drafts",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/saved-demos",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/messages/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/listing/:id/report",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sell/new",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sell/edit/:id",
+      "destination": "/index.html"
+    }
+  ]
+}
