@@ -112,13 +112,18 @@ const notice=text=>{status.textContent=text};
 if(!window.supabase){notice('Account service could not load. Refresh to try again. Your local drafts are still available.');return}
 const client=window.supabase.createClient('https://zrfztnbyynrdzfeblkeq.supabase.co','sb_publishable_08pLgypGoC6dt6kdLBbeEw_HF4B5yG6');
 let user=null, profile=null, generation=0, cooldown=0;
+let profileReady=false,profileSaving=false,signinBusy=false;
+const profileRetry=el('button','Retry loading profile');profileRetry.type='button';profileRetry.hidden=true;byId('profile-form').before(profileRetry);
+function profileControls(disabled){for(const id of ['profile-name','profile-bio','save-profile'])byId(id).disabled=disabled}
+profileRetry.onclick=()=>{if(user&&!profileSaving)loadAccount({user})};
+
 let activeShopId=null,shopRows=[],shopCursor=null,shopRequest=0;
 async function attachPhoto(box,path,alt){if(!path||box.dataset.galleryActive==='true')return;box.dataset.photoPath=path;const marker=box.firstChild;let result;try{result=await client.storage.from('listing-photos').download(path)}catch{return}const {data,error}=result||{};if(error||!data||box.dataset.galleryActive==='true'||!box.isConnected||box.dataset.photoPath!==path||(marker&&marker.parentNode!==box))return;const url=URL.createObjectURL(data);const img=el('img');img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.alt=alt;img.style.cssText='width:100%;max-height:260px;object-fit:contain;float:none';box.prepend(img)}
 const signedOut=byId('signed-out'), signedIn=byId('signed-in');
 function message(error){if(error?.status===429)return 'Please wait a minute before trying again.';return 'That could not be completed. Check your connection and try again.'}
 async function loadAccount(session){
  const nextUser=session?.user||null;if(user?.id===nextUser?.id&&profile)return;
- const turn=++generation;user=nextUser;profile=null;
+ const turn=++generation;user=nextUser;profile=null;profileReady=false;profileSaving=false;profileControls(true);profileRetry.hidden=true;byId('account-email').textContent='';
  if(byId('detail-content').dataset.reportOwner){byId('detail-dialog').close();byId('detail-content').replaceChildren();delete byId('detail-content').dataset.reportOwner;}
  byId('my-reports').replaceChildren();byId('reports-status').textContent=user?'Loading reports…':'Sign in to view your reports.';
  savedFindIds=new Set();byId('saved-finds-list').replaceChildren();renderPublic();if(activeShopId)openSellerShop(activeShopId,false);
@@ -127,10 +132,10 @@ async function loadAccount(session){
  if(!user){byId('saved-finds-status').textContent='Sign in to save community listings across your devices.';notice('Sign in with a secure email link. No password needed.');return}
  byId('account-email').textContent=user.email||'Signed in';notice('Loading your seller profile…');
  try{const result=await client.from('seller_profiles').select('id,display_name,bio').eq('id',user.id).maybeSingle();
- if(turn!==generation)return;if(result.error)throw result.error;profile=result.data;
+ if(turn!==generation)return;if(result.error)throw result.error;profile=result.data;profileReady=true;profileControls(false);
  byId('profile-name').value=profile?.display_name||'';byId('profile-bio').value=profile?.bio||'';
  notice(profile?'You are signed in. Your profile is saved.':'You are signed in. Choose your public seller name to get started.');await loadDrafts(turn);await loadInbox();await loadSavedFinds();await loadBlockedMembers();await loadReports();
- }catch(error){if(turn===generation)notice(message(error))}
+ }catch(error){if(turn===generation){if(!profileReady){profileRetry.hidden=false;notice('Your seller profile could not load. Retry before editing; your saved profile has not been changed.')}else notice(message(error))}}
 }
 const listingStates={draft:'Private draft',published:'Published',sold:'Sold',archived:'Archived'};
 function listingActions(d){
@@ -404,19 +409,20 @@ function reportListing(d){if(typeof window!=='undefined'&&window.RackNavigation&
 byId('refresh-reports').onclick=()=>loadReports();
 
 byId('email-signin').onsubmit=async event=>{
- event.preventDefault();const button=byId('send-link');if(Date.now()<cooldown)return;
- button.disabled=true;notice('Sending your sign-in link…');
+ event.preventDefault();const button=byId('send-link'),email=byId('signin-email');if(user||signinBusy||Date.now()<cooldown)return;
+ if(!email.checkValidity()){email.reportValidity();return}const signinGeneration=generation;signinBusy=true;button.disabled=true;email.disabled=true;notice('Sending your sign-in link…');
  try{const {error}=await client.auth.signInWithOtp({email:byId('signin-email').value.trim()});if(error)throw error;
- cooldown=Date.now()+60000;notice('Check your inbox for a Rack Relic sign-in link. If it is missing, check Junk or Spam. You can request another link in one minute.');
+ cooldown=Date.now()+60000;if(!user&&generation===signinGeneration)notice('Check your inbox for a Rack Relic sign-in link. If it is missing, check Junk or Spam. You can request another link in one minute.');
  setTimeout(()=>{button.disabled=false},60000);
- }catch(error){notice(message(error));button.disabled=false}
+ }catch(error){if(!user&&generation===signinGeneration)notice(message(error));button.disabled=false}finally{signinBusy=false;email.disabled=false}
 };
 byId('profile-form').onsubmit=async event=>{
- event.preventDefault();if(!user)return;const button=byId('save-profile');const current=user.id,turn=generation;button.disabled=true;
+ event.preventDefault();if(!user||!profileReady||profileSaving)return;const current=user.id,turn=generation;
  const displayName=byId('profile-name').value.trim(),bio=byId('profile-bio').value.trim();
- if(displayName.length<2){notice('Use at least two characters for your seller name.');button.disabled=false;return}
+ if(displayName.length<2||displayName.length>60||bio.length>500){notice('Use a seller name of 2–60 characters and a bio of at most 500 characters.');return}
+ profileSaving=true;profileControls(true);notice('Saving your seller profile…');
  try{const {data,error}=await client.from('seller_profiles').upsert({id:current,display_name:displayName,bio}).select('id,display_name,bio').single();if(error)throw error;
- if(user?.id===current&&turn===generation){profile=data;notice('Seller profile saved. Your email remains private.')}}catch(error){notice(message(error))}finally{button.disabled=false}
+ if(user?.id===current&&turn===generation){profile=data;notice('Seller profile saved. Your email remains private.')}}catch(error){if(user?.id===current&&turn===generation)notice('Your profile save was not confirmed. Your edits are still here; retry when connected.')}finally{if(user?.id===current&&turn===generation){profileSaving=false;profileControls(false)}}
 };
 byId('signout').onclick=async()=>{const {error}=await client.auth.signOut({scope:'local'});if(error)notice(message(error))};
 const originalRender=renderDrafts;
