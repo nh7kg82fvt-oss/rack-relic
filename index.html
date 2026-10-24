@@ -218,9 +218,9 @@ async function loadDrafts(turn=generation){
  const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[f.type];const path=current+'/'+d.id+'/'+crypto.randomUUID()+'.'+ext;
  const upload=await client.storage.from('listing-photos').upload(path,f,{contentType:f.type,upsert:false});if(upload.error)throw upload.error;
  if(user?.id!==current||uploadTurn!==generation)return;
- const update=await client.from('listings').update({photo_path:path}).eq('id',d.id).eq('seller_id',current).eq('updated_at',d.updated_at).select('id').maybeSingle();if(update.error)throw update.error;if(!update.data){toast('This listing changed elsewhere. Refresh and choose your photo again.');await loadDrafts();return}
+ const update=await client.from('listings').update({photo_path:path}).eq('id',d.id).eq('seller_id',current).eq('updated_at',d.updated_at).select('id').maybeSingle();if(user?.id!==current||uploadTurn!==generation)return;if(update.error)throw update.error;if(!update.data){toast('This listing changed elsewhere. Refresh and choose your photo again.');await loadDrafts();return}
  toast(d.status==='published'?'Listing photo updated.':'Photo saved privately.');await loadDrafts();await loadPublic();
- }catch(error){toast(message(error))}finally{changing=false;controls.forEach(c=>c.disabled=false)}};
+ }catch(error){if(user?.id===current&&uploadTurn===generation)toast(message(error))}finally{changing=false;controls.forEach(c=>c.disabled=false)}};
  }
  let changing=false;
  listingActions(d).forEach(option=>{const action=el('button',option.label);action.type='button';action.onclick=async()=>{
@@ -247,17 +247,17 @@ async function showListing(d){if(typeof window!=='undefined'&&window.RackNavigat
  if(d.status==='sold')body.append(el('p','This item has been marked sold.','notice'));else{const contact=el('button','Message seller');contact.type='button';contact.onclick=()=>contactSeller(d,contact);body.append(contact)}
  const report=el('button','Report listing');report.type='button';report.onclick=()=>reportListing(d);body.append(report);renderCheckoutPreview(d,body);attachPhoto(body,d.photo_path,d.title)
 }
-let savedFindIds=new Set();
+let savedFindIds=new Set(),savedFindsRequest=0;
 function saveFindButton(d){const button=el('button',savedFindIds.has(d.id)?'Remove saved find':'Save find');button.type='button';button.setAttribute('aria-pressed',String(savedFindIds.has(d.id)));button.onclick=async()=>{
  if(!user){if(typeof window!=='undefined'&&window.RackNavigation)window.RackNavigation.navigate('/account');byId('account').scrollIntoView();byId('signin-email').focus();notice('Sign in to save community listings across your devices.');return}
  const current=user.id,turn=generation,removing=savedFindIds.has(d.id);button.disabled=true;
  try{const result=removing?await client.from('saved_listings').delete().eq('user_id',current).eq('listing_id',d.id):await client.from('saved_listings').insert({user_id:current,listing_id:d.id});if(result.error&&!(result.error.code==='23505'&&!removing))throw result.error;if(user?.id!==current||turn!==generation)return;await loadSavedFinds();if(user?.id!==current||turn!==generation)return;toast(removing?'Removed from your saved finds.':'Saved to your account.')}
- catch(error){toast('Could not update saved finds. The listing may no longer be available. Refresh and try again.')}finally{button.disabled=false}
+ catch(error){if(user?.id===current&&turn===generation)toast('Could not update saved finds. The listing may no longer be available. Refresh and try again.')}finally{button.disabled=false}
  };return button}
 async function loadSavedFinds(){
- if(!user)return;const current=user.id,turn=generation;
- const {data,error}=await client.from('saved_listings').select('listing_id,listings(id,seller_id,title,brand,category,price_cents,size,condition,description,photo_path,status,moderation_status,delivery_mode,shipping_fee_cents,dispatch_days,pickup_area,seller_profiles(display_name))').eq('user_id',current);
- if(turn!==generation||user?.id!==current)return;
+ if(!user)return;const current=user.id,turn=generation,request=++savedFindsRequest;
+ const {data,error}=await Promise.resolve(client.from('saved_listings').select('listing_id,listings(id,seller_id,title,brand,category,price_cents,size,condition,description,photo_path,status,moderation_status,delivery_mode,shipping_fee_cents,dispatch_days,pickup_area,seller_profiles(display_name))').eq('user_id',current)).catch(()=>({error:true}));
+ if(turn!==generation||user?.id!==current||request!==savedFindsRequest)return;
  if(error){byId('saved-finds-status').textContent='Saved finds could not load. Use Refresh saved finds to try again.';return}
  savedFindIds=new Set(data.map(row=>row.listing_id));const box=byId('saved-finds-list');box.replaceChildren();
  byId('saved-finds-status').textContent=data.length?data.length+' saved find'+(data.length===1?'':'s')+'. Only you can see this list.':'No saved community listings yet. Choose Save find on a community listing.';
@@ -311,16 +311,16 @@ byId('shop-refresh').onclick=()=>openSellerShop(activeShopId,false);byId('shop-m
 window.addEventListener('hashchange',routeSellerShop);
 
 let activeConversation=null, messageView=0;
-let routeConversations=[];
+let routeConversations=[],inboxRequest=0;
 const unsentMessages=new Map(),pendingSends=new Set();
 const inbox=byId('inbox-list'), thread=byId('message-thread');
-function clearMessages(){routeConversations=[];unsentMessages.clear();pendingSends.clear();activeConversation=null;++messageView;inbox.replaceChildren();thread.replaceChildren();byId('message-status').textContent=user?'Loading conversations…':'Sign in to read and send messages.'}
+function clearMessages(){++inboxRequest;routeConversations=[];unsentMessages.clear();pendingSends.clear();activeConversation=null;++messageView;inbox.replaceChildren();thread.replaceChildren();byId('message-status').textContent=user?'Loading conversations…':'Sign in to read and send messages.'}
 async function loadInbox(){
- const current=user?.id,turn=generation;if(!current)return;
- const {data,error}=await client.from('conversations').select('id,listing_id,listing_title,buyer_id,seller_id,buyer:seller_profiles!conversations_buyer_id_fkey(display_name),seller:seller_profiles!conversations_seller_id_fkey(display_name)').order('created_at',{ascending:false}).limit(100);
- if(turn!==generation)return;if(error){byId('message-status').textContent='Messages could not load. Use Refresh messages to retry.';return}
+ const current=user?.id,turn=generation,request=++inboxRequest;if(!current)return;
+ const {data,error}=await Promise.resolve(client.from('conversations').select('id,listing_id,listing_title,buyer_id,seller_id,buyer:seller_profiles!conversations_buyer_id_fkey(display_name),seller:seller_profiles!conversations_seller_id_fkey(display_name)').order('created_at',{ascending:false}).limit(100)).catch(()=>({error:true}));
+ if(turn!==generation||user?.id!==current||request!==inboxRequest)return;if(error){byId('message-status').textContent='Messages could not load. Use Refresh messages to retry.';return}
  routeConversations=data;inbox.replaceChildren();byId('message-status').textContent=data.length?'Choose a conversation. Use Refresh messages to check for replies.':'No conversations yet. Open a community listing and choose Message seller.';
- data.forEach(c=>{const name=c.buyer_id===current?c.seller?.display_name:c.buyer?.display_name;const b=el('button',c.listing_title+' — '+(name||'Member'));b.type='button';b.onclick=()=>openConversation(c);inbox.append(b)});if(typeof window!=='undefined')window.dispatchEvent(new Event('rack-inbox-loaded'));
+ data.forEach(c=>{const name=c.buyer_id===current?c.seller?.display_name:c.buyer?.display_name;const b=el('button',c.listing_title+' — '+(name||'Member'));b.type='button';b.setAttribute('data-conversation-id',c.id);b.setAttribute('data-base-label',c.listing_title+' — '+(name||'Member'));b.onclick=()=>openConversation(c);inbox.append(b)});if(typeof window!=='undefined')window.dispatchEvent(new Event('rack-inbox-loaded'));
 }
 async function loadBlockedMembers(){
  const current=user?.id,turn=generation;const box=byId('blocked-members');box.replaceChildren();
@@ -349,7 +349,7 @@ async function openConversation(c){if(typeof window!=='undefined'&&window.RackNa
  const [messages,ownBlock,permission]=await Promise.all([
  client.from('messages').select('id,sender_id,body,created_at').eq('conversation_id',c.id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(100),
  client.from('member_blocks').select('blocked_id').eq('blocker_id',current).eq('blocked_id',other).maybeSingle(),
- client.rpc('can_message',{other_member:other})]);
+ client.rpc('can_message',{other_member:other})]).catch(()=>[{error:true},{error:true},{error:true}]);
  const {data,error}=messages;
  if(view!==messageView||user?.id!==current||turn!==generation)return;
  if(error){thread.replaceChildren(el('p','Unable to load this conversation. Please refresh messages.'));return}
