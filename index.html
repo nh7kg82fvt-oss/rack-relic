@@ -127,7 +127,7 @@ async function loadAccount(session){
  if(byId('detail-content').dataset.reportOwner){byId('detail-dialog').close();byId('detail-content').replaceChildren();delete byId('detail-content').dataset.reportOwner;}
  byId('my-reports').replaceChildren();byId('my-reports').setAttribute('aria-busy','false');byId('reports-status').textContent=user?'Loading reports…':'Sign in to view your reports.';
  savedFindIds=new Set();byId('saved-finds-list').replaceChildren();renderPublic();if(activeShopId)openSellerShop(activeShopId,false);
- clearMessages();byId('blocked-members').replaceChildren();byId('blocked-status').textContent=user?'Loading blocked members…':'Sign in to manage blocked members.';signedOut.hidden=!!user;signedIn.hidden=!user;byId('cloud-drafts').replaceChildren();
+ clearMessages();++blockedMembersRequest;byId('blocked-members').replaceChildren();byId('blocked-members').setAttribute('aria-busy','false');byId('blocked-status').textContent=user?'Loading blocked members…':'Sign in to manage blocked members.';signedOut.hidden=!!user;signedIn.hidden=!user;byId('cloud-drafts').replaceChildren();
  byId('profile-name').value='';byId('profile-bio').value='';
  if(!user){byId('saved-finds-status').textContent='Sign in to save community listings across your devices.';notice('Sign in with a secure email link. No password needed.');return}
  byId('account-email').textContent=user.email||'Signed in';notice('Loading your seller profile…');
@@ -311,7 +311,7 @@ byId('shop-refresh').onclick=()=>openSellerShop(activeShopId,false);byId('shop-m
 window.addEventListener('hashchange',routeSellerShop);
 
 let activeConversation=null, messageView=0;
-let routeConversations=[],inboxRequest=0;
+let routeConversations=[],inboxRequest=0,blockedMembersRequest=0;
 const unsentMessages=new Map(),pendingSends=new Set();
 const inbox=byId('inbox-list'), thread=byId('message-thread');
 function clearMessages(){++inboxRequest;routeConversations=[];unsentMessages.clear();pendingSends.clear();activeConversation=null;++messageView;inbox.replaceChildren();thread.replaceChildren();byId('message-status').textContent=user?'Loading conversations…':'Sign in to read and send messages.'}
@@ -323,24 +323,28 @@ async function loadInbox(){
  data.forEach(c=>{const name=c.buyer_id===current?c.seller?.display_name:c.buyer?.display_name;const b=el('button',c.listing_title+' — '+(name||'Member'));b.type='button';b.setAttribute('data-conversation-id',c.id);b.setAttribute('data-base-label',c.listing_title+' — '+(name||'Member'));b.onclick=()=>openConversation(c);inbox.append(b)});if(typeof window!=='undefined')window.dispatchEvent(new Event('rack-inbox-loaded'));
 }
 async function loadBlockedMembers(){
- const current=user?.id,turn=generation;const box=byId('blocked-members');box.replaceChildren();
- if(!current){byId('blocked-status').textContent='Sign in to manage blocked members.';return}
- const {data,error}=await client.from('member_blocks').select('blocked_id,member:seller_profiles!member_blocks_blocked_id_fkey(display_name)').eq('blocker_id',current);
- if(turn!==generation||user?.id!==current)return;
- if(error){byId('blocked-status').textContent='Blocked members could not load. Refresh messages to retry.';return}
- byId('blocked-status').textContent=data.length?'Blocked members cannot exchange new messages with you. Existing conversations remain available.':'You have not blocked anyone. Open a conversation to block a member.';
- data.forEach(row=>{const card=el('div',undefined,'draft');card.append(el('p',row.member?.display_name||'Member'));const unblock=el('button','Unblock member');unblock.type='button';unblock.onclick=()=>setMemberBlock(row.blocked_id,false,unblock);card.append(unblock);box.append(card)});
+ const current=user?.id,turn=generation,request=++blockedMembersRequest,box=byId('blocked-members'),feedback=byId('blocked-status');
+ feedback.setAttribute('role','status');
+ if(!current){box.replaceChildren();box.setAttribute('aria-busy','false');feedback.textContent='Sign in to manage blocked members.';return}
+ const active=()=>turn===generation&&user?.id===current&&request===blockedMembersRequest;
+ box.setAttribute('aria-busy','true');feedback.textContent='Loading blocked members…';
+ try{const {data,error}=await client.from('member_blocks').select('blocked_id,member:seller_profiles!member_blocks_blocked_id_fkey(display_name)').eq('blocker_id',current);
+ if(!active())return;if(error)throw error;if(!Array.isArray(data))throw Error('Invalid blocked members response');
+ const cards=data.map(row=>{const card=el('div',undefined,'draft');const name=el('p',row.member?.display_name||'Member');name.setAttribute('style','overflow-wrap:anywhere');card.append(name);const unblock=el('button','Unblock member');unblock.type='button';unblock.onclick=()=>setMemberBlock(row.blocked_id,false,unblock);card.append(unblock);return card});box.replaceChildren(...cards);
+ feedback.textContent=data.length?'Blocked members cannot exchange new messages with you. Existing conversations remain available.':'You have not blocked anyone. Open a conversation to block a member.';
+ }catch{if(active())feedback.textContent='Blocked members could not load. Your last confirmed list is kept here. Refresh messages to retry.'}
+ finally{if(active())box.setAttribute('aria-busy','false')}
 }
 async function setMemberBlock(other,blocked,button){
- const current=user?.id,turn=generation;if(!current)return;
+ const current=user?.id,turn=generation;if(!current||button.disabled)return;
  if(!confirm(blocked?'Block this member? Neither of you can send new messages to the other, on any listing. Existing messages remain available. You can unblock them later.':'Unblock this member? New messages can resume unless they have also blocked you.'))return;
  button.disabled=true;
  try{const result=blocked?await client.from('member_blocks').insert({blocker_id:current,blocked_id:other}):await client.from('member_blocks').delete().eq('blocker_id',current).eq('blocked_id',other);
  if(result.error&&!(blocked&&result.error.code==='23505'))throw result.error;
  if(user?.id!==current||turn!==generation)return;
- await loadBlockedMembers();const c=activeConversation;if(c&&(c.buyer_id===other||c.seller_id===other))await openConversation(c);
- toast(blocked?'Member blocked. New messages are disabled.':'Member unblocked.');
- }catch(error){toast('Could not update this block. Refresh messages and try again.')}finally{button.disabled=false}
+ await loadBlockedMembers();if(user?.id!==current||turn!==generation)return;const c=activeConversation;if(c&&(c.buyer_id===other||c.seller_id===other))await openConversation(c);
+ if(user?.id!==current||turn!==generation)return;toast(blocked?'Member blocked. New messages are disabled.':'Member unblocked.');
+ }catch(error){if(user?.id===current&&turn===generation)toast('Could not update this block. Refresh messages and try again.')}finally{if(user?.id===current&&turn===generation)button.disabled=false}
 }
 
 async function openConversation(c){if(typeof window!=='undefined'&&window.RackNavigation&&!window.RackNavigation.isThreadRoute(c.id)){window.RackNavigation.navigate('/messages/'+encodeURIComponent(c.id));return}
