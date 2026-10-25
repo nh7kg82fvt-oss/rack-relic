@@ -8,7 +8,7 @@ const ORIGIN='https://rack-relic-git-preview-photo-delivery-boundary-rack-relic.
 const CALLBACK=ORIGIN+'/404.html',STAGE='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const KEY='sb-zvtaqzcqfdjpuwnlpzln-auth-token',LEDGER='rr-preview-auth-bootstrap-v1';
 const FIXTURES=Object.freeze({buyer:{emailHash:'af835472b5f3be60a5e8d5b991b9362b4addde8fb54b58e00e2ad1e4cd5ffd21',idHash:'381c3ec4f39ec351380797c01245157ff6e30d381fbc7e9b94ebc028a671ee6b'},seller:{emailHash:'247227d47b4c7a2374aa6752f7baa052a3b5fdc537ed5fc5f2cdc68c8c49082a',idHash:'00c21e427ef3019a35cf92e275de7af132d738e838cc8b9233811b60bb7c3375'}});
-let blockedRequest=null;
+let blockedRequest=null,fatalBlockedRequest=null;
 let requestedEmail=null;
 const digest=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');
 let callback=false,halted=false,reason=null,phase='setup',marker=null,identityVerified=false,lastWritten=null,client=null,requestActive=false,ledgerTrusted=false;
@@ -42,7 +42,7 @@ function captureBlocked(input,options){
 function stop(code){halted=true;reason=reason||code;clearCallback();throw Error('PREVIEW_AUTH_STOP')}
 function require(ok,code){if(!ok)stop(code)}
 function save(){if(marker&&ledgerTrusted)localStorage.setItem(LEDGER,JSON.stringify(marker))}
-function summary(status){const target=document.getElementById?.('preview-auth-status');if(target)target.textContent='Staging authentication: '+status+'.';return {status,reason,blockedRequest,role:typeof marker?.role==='string'&&Object.hasOwn(FIXTURES,marker.role)?marker.role:null,emailAttempts:ledgerTrusted?marker.emailAttempts:0,controlledAuthRequests:ledgerTrusted?marker.requests:0,verificationNavigationReserved:ledgerTrusted?marker.verifyReserved:0}}
+function summary(status){const target=document.getElementById?.('preview-auth-status');if(target)target.textContent='Staging authentication: '+status+'.';return {status,reason,blockedRequest,fatalBlockedRequest,role:typeof marker?.role==='string'&&Object.hasOwn(FIXTURES,marker.role)?marker.role:null,emailAttempts:ledgerTrusted?marker.emailAttempts:0,controlledAuthRequests:ledgerTrusted?marker.requests:0,verificationNavigationReserved:ledgerTrusted?marker.verifyReserved:0}}
 function settleError(){if(marker&&ledgerTrusted){marker.state='stopped';save()}return summary('stopped')}
 function existing(){return localStorage.getItem(KEY)!==null||localStorage.getItem(KEY+'-user')!==null}
 async function bounded(action){let timer;try{return await Promise.race([action(),new Promise((_,reject)=>{timer=setTimeout(()=>{halted=true;reason=reason||'auth-deadline';clearCallback();reject(Error('PREVIEW_AUTH_STOP'))},12000)})])}finally{clearTimeout(timer)}}
@@ -63,6 +63,7 @@ try{
   const record=captureBlocked(input,options);
   // Observed Toolbar GET remains denied; it cannot poison the controlled Auth flow.
   if(record.method==='GET'&&record.host===new URL(ORIGIN).hostname&&record.initiators.some(x=>x.host==='vercel.live'&&x.path==='/_next-live/feedback/feedback.js'))throw Error('PREVIEW_PLATFORM_REQUEST_BLOCKED');
+  if(!fatalBlockedRequest)fatalBlockedRequest=record;
   return stop('unexpected-background-fetch');
  };
  for(const name of ['XMLHttpRequest','WebSocket','EventSource'])window[name]=class{constructor(){stop('unexpected-network')}};
