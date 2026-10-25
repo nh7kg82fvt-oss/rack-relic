@@ -111,7 +111,7 @@ const status=byId('account-status');
 const notice=text=>{status.textContent=text};
 if(!window.supabase){notice('Account service could not load. Refresh to try again. Your local drafts are still available.');return}
 const client=window.supabase.createClient('https://zrfztnbyynrdzfeblkeq.supabase.co','sb_publishable_08pLgypGoC6dt6kdLBbeEw_HF4B5yG6');
-let user=null, profile=null, generation=0, cooldown=0;
+let user=null, profile=null, generation=0, cooldown=0,reportsRequest=0;
 let profileReady=false,profileSaving=false,signinBusy=false;
 const profileRetry=el('button','Retry loading profile');profileRetry.type='button';profileRetry.hidden=true;byId('profile-form').before(profileRetry);
 function profileControls(disabled){for(const id of ['profile-name','profile-bio','save-profile'])byId(id).disabled=disabled}
@@ -125,7 +125,7 @@ async function loadAccount(session){
  const nextUser=session?.user||null;if(user?.id===nextUser?.id&&profile)return;
  const turn=++generation;user=nextUser;profile=null;profileReady=false;profileSaving=false;profileControls(true);profileRetry.hidden=true;byId('account-email').textContent='';
  if(byId('detail-content').dataset.reportOwner){byId('detail-dialog').close();byId('detail-content').replaceChildren();delete byId('detail-content').dataset.reportOwner;}
- byId('my-reports').replaceChildren();byId('reports-status').textContent=user?'Loading reports…':'Sign in to view your reports.';
+ byId('my-reports').replaceChildren();byId('my-reports').setAttribute('aria-busy','false');byId('reports-status').textContent=user?'Loading reports…':'Sign in to view your reports.';
  savedFindIds=new Set();byId('saved-finds-list').replaceChildren();renderPublic();if(activeShopId)openSellerShop(activeShopId,false);
  clearMessages();byId('blocked-members').replaceChildren();byId('blocked-status').textContent=user?'Loading blocked members…':'Sign in to manage blocked members.';signedOut.hidden=!!user;signedIn.hidden=!user;byId('cloud-drafts').replaceChildren();
  byId('profile-name').value='';byId('profile-bio').value='';
@@ -383,14 +383,18 @@ async function contactSeller(d,button){
 byId('refresh-messages').onclick=async()=>{const c=activeConversation;await loadInbox();await loadBlockedMembers();if(c&&user)await openConversation(c)};
 
 async function loadReports(){
- const current=user?.id,turn=generation,box=byId('my-reports');box.replaceChildren();
- if(!current){byId('reports-status').textContent='Sign in to view your reports.';return}
- const {data,error}=await client.from('listing_reports').select('id,listing_title,reason,details,status,created_at').eq('reporter_id',current).order('created_at',{ascending:false});
- if(turn!==generation||user?.id!==current)return;
- if(error){byId('reports-status').textContent='Reports could not load. Use Refresh reports to try again.';return}
- byId('reports-status').textContent=data.length?'Only you and the marketplace administrator can see your reports.':'You have not reported any listings. Use Report listing in a community listing’s details.';
+ const current=user?.id,turn=generation,request=++reportsRequest,box=byId('my-reports'),feedback=byId('reports-status');
+ feedback.setAttribute('role','status');
+ if(!current){box.replaceChildren();box.setAttribute('aria-busy','false');feedback.textContent='Sign in to view your reports.';return}
+ const active=()=>turn===generation&&user?.id===current&&request===reportsRequest;
+ box.setAttribute('aria-busy','true');feedback.textContent='Loading private reports…';
+ try{const {data,error}=await client.from('listing_reports').select('id,listing_title,reason,details,status,created_at').eq('reporter_id',current).order('created_at',{ascending:false});
+ if(!active())return;if(error)throw error;if(!Array.isArray(data))throw Error('Invalid reports response');
  const labels={open:'Submitted',reviewing:'Under review',resolved:'Resolved',dismissed:'Closed — no action taken'};
- data.forEach(r=>{const card=el('article',undefined,'draft');card.append(el('h3',r.listing_title),el('p',r.reason),el('p',r.details),el('p',labels[r.status]||r.status,'muted'),el('small',new Date(r.created_at).toLocaleString()));box.append(card)});
+ const cards=data.map(r=>{const card=el('article',undefined,'draft');card.append(el('h3',r.listing_title),el('p',r.reason),el('p',r.details),el('p',labels[r.status]||r.status,'muted'),el('small',new Date(r.created_at).toLocaleString()));return card});box.replaceChildren(...cards);
+ feedback.textContent=data.length?'Only you and the marketplace administrator can see your reports.':'You have not reported any listings. Use Report listing in a community listing’s details.';
+ }catch{if(active())feedback.textContent='Reports could not load. Your last confirmed reports are kept here. Use Refresh reports to try again.'}
+ finally{if(active())box.setAttribute('aria-busy','false')}
 }
 function reportListing(d){if(typeof window!=='undefined'&&window.RackNavigation&&!window.RackNavigation.isReportRoute(d.id)){window.RackNavigation.navigate('/listing/'+encodeURIComponent(d.id)+'/report');return}
  if(!user){byId('detail-dialog').close();if(typeof window!=='undefined'&&window.RackNavigation)window.RackNavigation.navigate('/account');byId('account').scrollIntoView();byId('signin-email').focus();notice('Sign in to report a listing. Your email will not be shown to the seller.');return}
