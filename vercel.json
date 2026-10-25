@@ -2,6 +2,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/listing-photo/:id",
+      "destination": "/api/listing-photo?id=:id"
+    },
+    {
       "source": "/shop",
       "destination": "/index.html"
     },
@@ -97,5 +101,13 @@
       "source": "/sell/edit/:id",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "buildCommand": "node tools/build-staging.cjs",
+  "outputDirectory": "public",
+  "functions": {
+    "api/listing-photo.js": {
+      "includeFiles": "server/**",
+      "maxDuration": 10
+    }
+  }
 }
