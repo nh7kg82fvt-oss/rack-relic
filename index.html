@@ -141,9 +141,9 @@ const listingStates={draft:'Private draft',published:'Published',sold:'Sold',arc
 function listingActions(d){
  if(d.moderation_status==='hidden')return d.status==='archived'?[{label:'Restore to private draft',status:'draft'}]:d.status==='draft'?[{label:'Archive draft',status:'archived'}]:[{label:'Move to private draft',status:'draft'},{label:'Archive listing',status:'archived'}];
  if(d.status==='archived')return [{label:'Restore to private draft',status:'draft'}];
- if(d.status==='sold')return [{label:'Relist item',status:'published',confirm:'Relist this item for everyone to see? Only relist it if it is available again.'},{label:'Move to private draft',status:'draft'},{label:'Archive listing',status:'archived'}];
+ if(d.status==='sold')return [{label:'Relist item',status:'published',confirm:'I confirm this item is accurately described, I have the right to sell it and use these photos, and it is not a counterfeit, replica or unauthorized copy, even if disclosed as such. This does not mean Rack Relic has authenticated the item. Relist this available item?'},{label:'Move to private draft',status:'draft'},{label:'Archive listing',status:'archived'}];
  if(d.status==='published')return [{label:'Mark sold',status:'sold',confirm:'Mark this item sold? It will leave browse results. This does not record or process a payment.'},{label:'Unpublish listing',status:'draft'},{label:'Archive listing',status:'archived',confirm:'Archive this listing? It will no longer appear to shoppers. You can restore it later.'}];
- return [{label:'Publish listing',status:'published',confirm:'Publish this listing and photo for everyone to see? Your email stays private. Checkout is not available yet.'},{label:'Archive draft',status:'archived'}];
+ return [{label:'Publish listing',status:'published',confirm:'I confirm this item is accurately described, I have the right to sell it and use these photos, and it is not a counterfeit, replica or unauthorized copy, even if disclosed as such. This does not mean Rack Relic has authenticated the item. Publish this listing? Checkout remains unavailable.'},{label:'Archive draft',status:'archived'}];
 }
 async function changeListingState(d,next){
  const current=user?.id,turn=generation;if(!current)return false;
