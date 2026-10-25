@@ -61,8 +61,8 @@ try{
  // This document has no app timers/listeners. Other tabs remain an operator gate.
  window.fetch=async(input,options)=>{
   const record=captureBlocked(input,options);
-  // Observed Toolbar GET remains denied; it cannot poison the controlled Auth flow.
-  if(record.method==='GET'&&record.host===new URL(ORIGIN).hostname&&record.initiators.some(x=>x.host==='vercel.live'&&x.path==='/_next-live/feedback/feedback.js'))throw Error('PREVIEW_PLATFORM_REQUEST_BLOCKED');
+  // Observed Toolbar GET and HEAD /404.html remain denied without poisoning controlled Auth.
+  if((record.method==='GET'||(record.method==='HEAD'&&record.path==='/404.html'))&&record.host===new URL(ORIGIN).hostname&&record.initiators.some(x=>x.host==='vercel.live'&&x.path==='/_next-live/feedback/feedback.js'))throw Error('PREVIEW_PLATFORM_REQUEST_BLOCKED');
   if(!fatalBlockedRequest)fatalBlockedRequest=record;
   return stop('unexpected-background-fetch');
  };
