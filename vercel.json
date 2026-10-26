@@ -96,6 +96,10 @@
     {
       "source": "/sell/edit/:id",
       "destination": "/index.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/policies/support.html"
     }
   ]
 }
