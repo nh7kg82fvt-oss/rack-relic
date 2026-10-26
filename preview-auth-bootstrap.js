@@ -8,7 +8,7 @@ const ORIGIN='https://rack-relic-git-preview-photo-delivery-boundary-rack-relic.
 const CALLBACK=ORIGIN+'/404.html',STAGE='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const KEY='sb-zvtaqzcqfdjpuwnlpzln-auth-token',LEDGER='rr-preview-auth-bootstrap-v1';
 const FIXTURES=Object.freeze({buyer:{emailHash:'af835472b5f3be60a5e8d5b991b9362b4addde8fb54b58e00e2ad1e4cd5ffd21',idHash:'381c3ec4f39ec351380797c01245157ff6e30d381fbc7e9b94ebc028a671ee6b'},seller:{emailHash:'247227d47b4c7a2374aa6752f7baa052a3b5fdc537ed5fc5f2cdc68c8c49082a',idHash:'00c21e427ef3019a35cf92e275de7af132d738e838cc8b9233811b60bb7c3375'}});
-let blockedRequest=null,fatalBlockedRequest=null;
+let blockedRequest=null,fatalBlockedRequest=null,lastTransport=null,absentVerifierCleanup=0;
 let requestedEmail=null;
 const digest=async value=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(v=>v.toString(16).padStart(2,'0')).join('');
 let callback=false,halted=false,reason=null,phase='setup',marker=null,identityVerified=false,lastWritten=null,client=null,requestActive=false,ledgerTrusted=false;
@@ -42,7 +42,7 @@ function captureBlocked(input,options){
 function stop(code){halted=true;reason=reason||code;clearCallback();throw Error('PREVIEW_AUTH_STOP')}
 function require(ok,code){if(!ok)stop(code)}
 function save(){if(marker&&ledgerTrusted)localStorage.setItem(LEDGER,JSON.stringify(marker))}
-function summary(status){const target=document.getElementById?.('preview-auth-status');if(target)target.textContent='Staging authentication: '+status+'.';return {status,reason,blockedRequest,fatalBlockedRequest,role:typeof marker?.role==='string'&&Object.hasOwn(FIXTURES,marker.role)?marker.role:null,emailAttempts:ledgerTrusted?marker.emailAttempts:0,controlledAuthRequests:ledgerTrusted?marker.requests:0,verificationNavigationReserved:ledgerTrusted?marker.verifyReserved:0}}
+function summary(status){const target=document.getElementById?.('preview-auth-status');if(target)target.textContent='Staging authentication: '+status+'.';return {status,reason,blockedRequest,fatalBlockedRequest,lastTransport:lastTransport?{...lastTransport}:null,absentVerifierCleanup,role:typeof marker?.role==='string'&&Object.hasOwn(FIXTURES,marker.role)?marker.role:null,emailAttempts:ledgerTrusted?marker.emailAttempts:0,controlledAuthRequests:ledgerTrusted?marker.requests:0,verificationNavigationReserved:ledgerTrusted?marker.verifyReserved:0}}
 function settleError(){if(marker&&ledgerTrusted){marker.state='stopped';save()}return summary('stopped')}
 function existing(){return localStorage.getItem(KEY)!==null||localStorage.getItem(KEY+'-user')!==null}
 async function bounded(action){let timer;try{return await Promise.race([action(),new Promise((_,reject)=>{timer=setTimeout(()=>{halted=true;reason=reason||'auth-deadline';clearCallback();reject(Error('PREVIEW_AUTH_STOP'))},12000)})])}finally{clearTimeout(timer)}}
@@ -68,15 +68,19 @@ try{
  };
  for(const name of ['XMLHttpRequest','WebSocket','EventSource'])window[name]=class{constructor(){stop('unexpected-network')}};
  Object.defineProperty(navigator,'sendBeacon',{configurable:true,value:()=>stop('unexpected-network')});
- async function asset(src){await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(Error('ASSET_UNAVAILABLE'));document.head.append(script)})}
+ async function asset(src,integrity){await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;if(integrity){script.integrity=integrity;script.crossOrigin='anonymous'}script.onload=resolve;script.onerror=()=>reject(Error('ASSET_UNAVAILABLE'));document.head.append(script)})}
  await asset('/staging-config.js');
  const cfg=window.RACK_RELIC_STAGING_CONFIG;
  require(cfg?.url===STAGE&&typeof cfg.publicKey==='string'&&/^sb_publishable_[A-Za-z0-9_-]+$/.test(cfg.publicKey),'wrong-staging-config');
- await asset('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+ await asset('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0','sha256-vuJPwpIo7Vo3D3aiuhyjw5lUntrS/vI0U8gBSIVqSa8=');
  require(typeof window.supabase?.createClient==='function','sdk-unavailable');
  const storage={getItem(key){require(key===KEY||key===KEY+'-user','unexpected-storage-key');return localStorage.getItem(key)},
   setItem(key,value){require(!halted&&callback&&identityVerified&&(key===KEY||key===KEY+'-user'),'session-write-not-admitted');require(localStorage.getItem(KEY)===lastWritten,'session-changed-elsewhere');localStorage.setItem(key,value);if(key===KEY)lastWritten=value},
-  removeItem(){stop('session-removal-not-admitted')}};
+  removeItem(key){
+   // SDK error cleanup in implicit OTP flow; an absent key needs no mutation.
+   if(!callback&&phase==='email-request'&&key===KEY+'-code-verifier'&&localStorage.getItem(key)===null&&localStorage.getItem(KEY)===null&&localStorage.getItem(KEY+'-user')===null){absentVerifierCleanup++;return}
+   stop('session-removal-not-admitted')
+  }};
  async function authFetch(input,options={}){
   require(!halted&&!requestActive&&marker,'unexpected-or-concurrent-auth');
   const url=new URL(typeof input==='string'||input instanceof URL?String(input):input.url);
@@ -96,8 +100,14 @@ try{
   require(marker.requests+(marker.verifyReserved||0)<4,'auth-budget-exhausted');marker.requests++;save();
   requestActive=true;const abort=new AbortController();const timer=setTimeout(()=>abort.abort(),10000);
   try{
-   const response=await nativeFetch(input,{...options,signal:abort.signal,redirect:'error',cache:'no-store'});
+   lastTransport={phase,functionInvoked:true,httpStatus:null,outcome:'awaiting'};
+   let response;
+   try{response=await nativeFetch(input,{...options,signal:abort.signal,redirect:'error',cache:'no-store'})}
+   catch{lastTransport.outcome='unreadable-network-or-cors';halted=true;reason=reason||'auth-transport-uncertain';clearCallback();return new Response('{"message":"Staging authentication stopped","code":"bootstrap_stopped"}',{status:400,headers:{'Content-Type':'application/json'}})}
+   lastTransport.httpStatus=response.status;lastTransport.outcome=halted?'late-response-after-stop':'http-response';
+   if(halted)return new Response('{"message":"Staging authentication stopped","code":"bootstrap_stopped"}',{status:400,headers:{'Content-Type':'application/json'}});
    if(!response.ok){reason=response.status===429?'provider-rate-limit-no-resend':'provider-auth-rejected';halted=true;clearCallback();return new Response(JSON.stringify({message:'Staging authentication stopped',code:'bootstrap_stopped'}),{status:response.status,headers:{'Content-Type':'application/json'}})}
+   if(phase==='email-request'){try{await response.clone().json()}catch{lastTransport.outcome='unreadable-response';halted=true;reason=reason||'auth-response-uncertain';return new Response('{"message":"Staging authentication stopped","code":"bootstrap_stopped"}',{status:400,headers:{'Content-Type':'application/json'}})}}
    if(userPhase){let data;try{data=await response.clone().json()}catch{stop('identity-response-invalid')}
     const expected=FIXTURES[marker.role];require(typeof data?.id==='string'&&typeof data.email==='string'&&await digest(data.id)===expected.idHash&&await digest(data.email.toLowerCase())===expected.emailHash,'wrong-verified-identity');identityVerified=true;
    }
