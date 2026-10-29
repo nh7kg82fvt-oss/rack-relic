@@ -14,3 +14,11 @@ test('only public available inventory is an item conversion',()=>{assert.equal(s
 test('item event copies only approved fields',()=>{const e=safeEvent('view_item',listing);assert.equal(e.params.value,25);assert.equal(JSON.stringify(e).includes('private'),false);assert.equal(e.params.items[0].item_id,listing.id)});
 test('unapproved campaigns and arbitrary UTMs are dropped',()=>assert.deepEqual(attribution('https://www.rackrelic.com/?utm_source=google&utm_medium=cpc&utm_campaign=person@example.com&utm_term=private&gclid=private',['rr_launch_buyers']),{campaign_source:'google',campaign_medium:'cpc'}));
 test('approved campaign is retained',()=>assert.equal(attribution('https://www.rackrelic.com/?utm_campaign=rr_launch_buyers',['rr_launch_buyers']).campaign_name,'rr_launch_buyers'));
+
+
+test('ad landing cleanup rejects ambiguous or arbitrary parameters',()=>{
+ const {cleanAdLanding}=require('../tracking.js');
+ for(const query of ['utm_source=untrusted','utm_campaign=private','utm_term=private','fbclid=','fbclid=a&fbclid=b','fbclid=%40private','fbclid='+ 'x'.repeat(513),'constructor=x','code=secret','%65mail=private','fbclid=test#fragment'])assert.equal(cleanAdLanding('https://www.rackrelic.com/?'+query,['rr_launch_buyers']),null,query);
+ for(const key of ['gclid','fbclid','gbraid','wbraid'])assert.equal(cleanAdLanding('https://www.rackrelic.com/shop?'+key+'=TEST_123-ab',[]),'https://www.rackrelic.com/shop');
+ for(const url of ['https://preview.vercel.app/?gclid=test','http://www.rackrelic.com/?gclid=test','https://www.rackrelic.com:444/?gclid=test','https://www.rackrelic.com/account?gclid=test'])assert.equal(cleanAdLanding(url,[]),null);
+});
