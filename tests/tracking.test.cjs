@@ -1,0 +1,16 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {route,choice,safeEvent,attribution}=require('../tracking.js');
+for(const path of ['/sell','/account','/messages','/messages/123','/sell/new','/sell/edit/123','/saved','/reports','/drafts','/bundles','/bundle-drafts','/price-suggestions','/seller/123','/demo/item-1','/unknown']) test('excludes private or demo path '+path,()=>assert.equal(route('https://www.rackrelic.com'+path),null));
+for(const query of ['?code=secret','#access_token=secret','?email=person@example.com','#refresh_token=secret','?token_hash=secret']) test('excludes authentication or identity URL '+query.split('=')[0],()=>assert.equal(route('https://www.rackrelic.com/'+query),null));
+test('search text and arbitrary parameters never survive route normalization',()=>assert.deepEqual(route('https://www.rackrelic.com/shop?q=person@example.com&secret=private#other'),{path:'/shop',name:'shop'}));
+test('catalog paths are allowlisted, not arbitrary free text',()=>{assert.equal(route('/brand/private-person'),null);assert.deepEqual(route('/category/clothing'),{path:'/category/clothing',name:'browse'})});
+test('consent must be current, typed and versioned',()=>{for(const c of [null,{}, {v:2,at:1,analytics:true,advertising:true},{v:1,at:2e12,analytics:true,advertising:true},{v:1,at:1,analytics:'true',advertising:false},{v:1,at:1,analytics:true,advertising:true}])assert.equal(choice(JSON.stringify(c),1e12,false),null)});
+test('GPC overrides stored advertising consent',()=>assert.equal(choice(JSON.stringify({v:1,at:1e12,analytics:true,advertising:true}),1e12+1,true).advertising,false));
+test('search does not include raw text',()=>assert.deepEqual(safeEvent('search_used',{q:'person@example.com',email:'private'}),{name:'search_used',params:{}}));
+test('purchase and arbitrary events cannot be emitted',()=>{for(const e of ['purchase','begin_checkout','sign_up','private_message','demo_view'])assert.equal(safeEvent(e,{value:10}),null)});
+const listing={id:'11111111-2222-3333-4444-555555555555',status:'published',moderation_status:'active',category:'Clothing',price_cents:2500,title:'private text',seller_id:'private',email:'private',photo_path:'private'};
+test('only public available inventory is an item conversion',()=>{assert.equal(safeEvent('view_item',{...listing,status:'archived'}),null);assert.equal(safeEvent('view_item',{...listing,status:'sold'}),null);assert.equal(safeEvent('view_item',{...listing,moderation_status:'hidden'}),null)});
+test('item event copies only approved fields',()=>{const e=safeEvent('view_item',listing);assert.equal(e.params.value,25);assert.equal(JSON.stringify(e).includes('private'),false);assert.equal(e.params.items[0].item_id,listing.id)});
+test('unapproved campaigns and arbitrary UTMs are dropped',()=>assert.deepEqual(attribution('https://www.rackrelic.com/?utm_source=google&utm_medium=cpc&utm_campaign=person@example.com&utm_term=private&gclid=private',['rr_launch_buyers']),{campaign_source:'google',campaign_medium:'cpc'}));
+test('approved campaign is retained',()=>assert.equal(attribution('https://www.rackrelic.com/?utm_campaign=rr_launch_buyers',['rr_launch_buyers']).campaign_name,'rr_launch_buyers'));

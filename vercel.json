@@ -104,6 +104,21 @@
     {
       "source": "/seller-guide",
       "destination": "/policies/seller-guide.html"
+    },
+    {
+      "source": "/tracking-privacy",
+      "destination": "/policies/tracking-privacy.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin"
+        }
+      ]
     }
   ]
 }
