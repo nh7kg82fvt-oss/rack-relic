@@ -37,6 +37,26 @@
     for (const [key, values] of Object.entries(allowed)) if (values.includes(u.searchParams.get(key))) out[({utm_source:'campaign_source',utm_medium:'campaign_medium',utm_campaign:'campaign_name'})[key]] = u.searchParams.get(key);
     return out;
   }
+  function cleanAdLanding(url, campaignNames, listingId) {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' || !['rackrelic.com','www.rackrelic.com'].includes(u.hostname) || u.port || u.username || u.password || u.hash || !u.search) return null;
+      const listing = uuid.test(listingId || '') && u.pathname === '/listing/'+listingId;
+      if (!route(u.href) && !listing) return null;
+      const labels = {utm_source:['google','facebook','instagram','bing','newsletter'],utm_medium:['cpc','paid_social','organic_social','email','referral'],utm_campaign:campaignNames};
+      const seenKeys = new Set();
+      for (const [key,value] of u.searchParams) {
+        if (seenKeys.has(key)) return null;
+        seenKeys.add(key);
+        if (Object.prototype.hasOwnProperty.call(labels,key)) {
+          if (!labels[key].includes(value)) return null;
+        } else if (!['fbclid','gclid','gbraid','wbraid'].includes(key) || !/^[A-Za-z0-9_-]{1,512}$/.test(value)) return null;
+      }
+      if (!seenKeys.size) return null;
+      // Discard click identifiers, never persist them or pass them to SDKs.
+      return u.origin+u.pathname;
+    } catch { return null; }
+  }
   function referrer(value) {
     try { const h=new URL(value).hostname;
       for (const site of ['google.com','bing.com','facebook.com','instagram.com','t.co','pinterest.com'])
@@ -44,7 +64,7 @@
     } catch {}
     return '';
   }
-  const core = {route, choice, safeEvent, attribution, referrer};
+  const core = {route, choice, safeEvent, attribution, referrer, cleanAdLanding};
   if (typeof module !== 'undefined' && module.exports) { module.exports = core; return; }
   const config = root.RackTrackingConfig || {}, production = ['www.rackrelic.com','rackrelic.com'].includes(location.hostname) && location.protocol === 'https:';
   let consent; try { consent = choice(localStorage.getItem(KEY), Date.now(), navigator.globalPrivacyControl === true); } catch { consent = null; }
@@ -64,6 +84,14 @@
   function allowed() { return production && config.enabled === true && consent?.analytics === true && Date.now()-consent.at <= TTL; }
   function note(event) { if (!production) { diagnostics.push(event); if (diagnostics.length > 30) diagnostics.shift(); } }
   function script(src) { const s = document.createElement('script'); s.src=src; s.async=true; s.referrerPolicy='origin'; document.head.append(s); }
+  function prepareAdLanding() {
+    if (leaving || !production || config.enabled !== true || !adsAvailable ||
+        consent?.advertising !== true || consent.adPolicy !== AD_POLICY ||
+        Date.now()-consent.at > TTL || navigator.globalPrivacyControl === true) return;
+    const clean = cleanAdLanding(location.href,config.campaignNames || [],verifiedListing);
+    if (!clean) return;
+    try { root.history.replaceState(root.history.state,'',clean); } catch { /* URL remains blocked. */ }
+  }
   function adsAllowed() {
     // SDKs can read the document URL themselves. Never load them on a query,
     // fragment, auth callback, preview, or an unverified/private page.
@@ -77,6 +105,7 @@
       ad_storage:ads?'granted':'denied',ad_user_data:ads?'granted':'denied',ad_personalization:ads?'granted':'denied'});
   }
   function sync() {
+    prepareAdLanding();
     const context=publicContext(), on=allowed() && !!context && !leaving;
     const adOn=adsAllowed(), googleAdsOn=adOn && config.googleAdsEnabled === true && !!adsId;
     if (googleId) root['ga-disable-'+googleId]=!on;
@@ -132,7 +161,7 @@
   }
   function track(name,input) {
     const event=safeEvent(name,input); if (!event) return false;
-    if (name==='view_item' && location.pathname==='/listing/'+input.id && !location.search && !location.hash) { verifiedListing=input.id; sync(); page(); }
+    if (name==='view_item' && location.pathname==='/listing/'+input.id) { verifiedListing=input.id; sync(); page(); }
     const current=publicContext();
     // Real item views are sent only after the application verifies public availability.
     const itemContext=name==='view_item' && /^\/listing\/[0-9a-f-]+$/i.test(location.pathname) && !location.search && !location.hash;
@@ -185,3 +214,4 @@
   root.addEventListener('storage',e=>{if(e.key!==KEY)return;const previouslyAllowed=!!consent?.analytics,previousAds=!!consent?.advertising;consent=choice(e.newValue,Date.now(),navigator.globalPrivacyControl===true);lastPage='';sync();clearCookies(!consent?.analytics,!consent?.advertising);if(panel)panel.hidden=!!consent && (!adsAvailable || consent.adPolicy===AD_POLICY);page();if((googleLoaded && previouslyAllowed && !consent?.analytics)||((metaLoaded||adsConfigured)&&previousAds&&!consent?.advertising))location.reload()});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })(typeof window !== 'undefined' ? window : globalThis);
+
