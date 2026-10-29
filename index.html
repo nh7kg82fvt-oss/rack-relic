@@ -125,7 +125,25 @@ function profileControls(disabled){for(const id of ['profile-name','profile-bio'
 profileRetry.onclick=()=>{if(user&&!profileSaving)loadAccount({user})};
 
 let activeShopId=null,shopRows=[],shopCursor=null,shopRequest=0;
-async function attachPhoto(box,path,alt){if(!path||box.dataset.galleryActive==='true')return;box.dataset.photoPath=path;const marker=box.firstChild;let result;try{result=await client.storage.from('listing-photos').download(path)}catch{return}const {data,error}=result||{};if(error||!data||box.dataset.galleryActive==='true'||!box.isConnected||box.dataset.photoPath!==path||(marker&&marker.parentNode!==box))return;const url=URL.createObjectURL(data);const img=el('img');img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.alt=alt;img.style.cssText='width:100%;max-height:260px;object-fit:contain;float:none';box.prepend(img)}
+let photoToken=null,photoAccount=null,photoEpoch=0,photoSequence=0;
+function setPhotoSession(session){
+ const next=session?.user?.id||null;
+ if(next!==photoAccount){++photoEpoch;document.querySelectorAll('[data-photo-request]').forEach(box=>box.querySelectorAll('img,[data-photo-feedback]').forEach(node=>node.remove()))}
+ photoAccount=next;photoToken=typeof session?.access_token==='string'?session.access_token:null;
+}
+async function attachPhoto(box,listing,alt){
+ if(!listing?.photo_path||!validShopId(listing.id)||box.dataset.galleryActive==='true')return;
+ const actor=user?.id||null,turn=generation,epoch=photoEpoch,request=String(++photoSequence),marker=box.firstChild;
+ if(actor!==photoAccount||actor&&!photoToken)return;
+ box.dataset.photoRequest=request;const feedback=el('p','Loading photo…','muted');feedback.dataset.photoFeedback='true';feedback.setAttribute('role','status');box.append(feedback);
+ const active=()=>box.dataset.galleryActive!=='true'&&box.isConnected&&box.dataset.photoRequest===request&&user?.id=== (actor||undefined)&&generation===turn&&photoEpoch===epoch&&(!marker||marker.parentNode===box);
+ try{
+  const response=await fetch('/api/listing-photo?id='+encodeURIComponent(listing.id),{method:'GET',headers:actor?{Authorization:'Bearer '+photoToken}:{},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
+  if(!active())return;if(!response.ok||!['image/jpeg','image/png','image/webp'].includes((response.headers.get('content-type')||'').split(';')[0]))throw Error('Photo unavailable');
+  const data=await response.blob();if(!active())return;if(!data.size||data.size>2097152)throw Error('Photo unavailable');
+  const url=URL.createObjectURL(data),img=el('img');img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.alt=alt;img.style.cssText='width:100%;max-height:260px;object-fit:contain;float:none';feedback.remove();box.prepend(img);
+ }catch{if(active())feedback.textContent='Photo unavailable. Refresh this page to retry.'}
+}
 const signedOut=byId('signed-out'), signedIn=byId('signed-in');
 function message(error){if(error?.status===429)return 'Please wait a minute before trying again.';return 'That could not be completed. Check your connection and try again.'}
 async function loadAccount(session){
@@ -217,7 +235,7 @@ async function loadDrafts(turn=generation){
  if(!result.data.length){box.append(el('p','No account drafts yet. Save a local draft below, then copy its details to your account.','muted'));return}
  const visible=result.data.filter(d=>!selected||d.status===selected);if(!visible.length){box.append(el('p','No listings with this status. Choose another status to see your listings.','muted'));return}
  visible.forEach(d=>{
- const item=el('article',undefined,'draft');item.append(el('h3',d.title),el('p',d.brand+' · $'+(d.price_cents/100).toFixed(2)),el('p',listingStates[d.status]+(d.status==='draft'?' · not published':''),'muted'));box.append(item);if(d.moderation_status==='hidden')item.append(el('p','Hidden by marketplace moderation. You may edit privately, but this item cannot appear publicly while the hold is active.','notice'));attachPhoto(item,d.photo_path,d.title);
+ const item=el('article',undefined,'draft');item.append(el('h3',d.title),el('p',d.brand+' · $'+(d.price_cents/100).toFixed(2)),el('p',listingStates[d.status]+(d.status==='draft'?' · not published':''),'muted'));box.append(item);if(d.moderation_status==='hidden')item.append(el('p','Hidden by marketplace moderation. You may edit privately, but this item cannot appear publicly while the hold is active.','notice'));attachPhoto(item,d,d.title);
  renderDeliveryEditor(d,item);
  if(d.status==='draft'||d.status==='published'){
  const label=el('label','Photo (JPG, PNG or WebP, up to 2 MB)');const input=el('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';label.append(input);item.append(label);
@@ -252,7 +270,7 @@ async function showListing(d){if(typeof window!=='undefined'&&window.RackNavigat
  if(!data||!['published','sold'].includes(data.status)||data.moderation_status==='hidden'){body.replaceChildren(heading,el('p','This listing is no longer available. The seller may have unpublished it.'));return}
  d=data;if(typeof window!=='undefined'&&window.RackNavigation?.isReportRoute(d.id)){reportListing(d);return}body.replaceChildren();const title=el('h2',d.title);title.id='detail-title';const sellerLink=el('a','Shop '+(d.seller_profiles?.display_name||'Seller'));sellerLink.href='/seller/'+encodeURIComponent(d.seller_id);body.append(title,sellerLink,el('p','$'+(d.price_cents/100).toFixed(2)),el('p',d.size+' · '+d.condition),el('p',d.description),el('p',deliverySummary(d),'muted'));
  if(d.status==='sold')body.append(el('p','This item has been marked sold.','notice'));else{const contact=el('button','Message seller');contact.type='button';contact.onclick=()=>contactSeller(d,contact);body.append(contact)}
- const report=el('button','Report listing');report.type='button';report.onclick=()=>reportListing(d);body.append(report);renderCheckoutPreview(d,body);attachPhoto(body,d.photo_path,d.title)
+ const report=el('button','Report listing');report.type='button';report.onclick=()=>reportListing(d);body.append(report);renderCheckoutPreview(d,body);attachPhoto(body,d,d.title)
 }
 let savedFindIds=new Set(),savedFindsRequest=0;
 function saveFindButton(d){const button=el('button',savedFindIds.has(d.id)?'Remove saved find':'Save find');button.type='button';button.setAttribute('aria-pressed',String(savedFindIds.has(d.id)));button.onclick=async()=>{
@@ -269,12 +287,12 @@ async function loadSavedFinds(){
  savedFindIds=new Set(data.map(row=>row.listing_id));const box=byId('saved-finds-list');box.replaceChildren();
  byId('saved-finds-status').textContent=data.length?data.length+' saved find'+(data.length===1?'':'s')+'. Only you can see this list.':'No saved community listings yet. Choose Save find on a community listing.';
  data.forEach(row=>{const d=row.listings,item=el('article',undefined,'draft');box.append(item);if(!d||!['published','sold'].includes(d.status)||d.moderation_status==='hidden'){item.append(el('h3','Listing no longer available'),el('p','The seller may have unpublished this item.','muted'),saveFindButton({id:row.listing_id}));return}
- item.append(el('h3',d.title),el('p',d.brand+' · $'+(d.price_cents/100).toFixed(2)),el('p',d.status==='sold'?'Sold':'Available','muted'));attachPhoto(item,d.photo_path,d.title);const view=el('button','View listing');view.onclick=()=>showListing(d);item.append(view,saveFindButton(d))});renderPublic();if(activeShopId)renderSellerShop()
+ item.append(el('h3',d.title),el('p',d.brand+' · $'+(d.price_cents/100).toFixed(2)),el('p',d.status==='sold'?'Sold':'Available','muted'));attachPhoto(item,d,d.title);const view=el('button','View listing');view.onclick=()=>showListing(d);item.append(view,saveFindButton(d))});renderPublic();if(activeShopId)renderSellerShop()
 }
 byId('refresh-saved-finds').onclick=()=>loadSavedFinds();
 function renderPublic(){const box=byId('community-listings');box.replaceChildren();if(publicState==='loading'){box.append(el('p','Loading community listings…','muted'));return}if(publicState==='error'){const retry=el('button','Retry community listings');retry.type='button';retry.onclick=loadPublic;box.append(el('p','Unable to load community listings. Please retry.','notice'),retry);return}const filters=catalogFilters(),mode=byId('sort').value;const rows=published.filter(d=>catalogMatches({...d,search:(d.title+' '+d.brand+' '+d.category+' '+(d.description||'')).toLowerCase()},filters));if(mode==='low')rows.sort((a,b)=>a.price_cents-b.price_cents);if(mode==='high')rows.sort((a,b)=>b.price_cents-a.price_cents);
  if(!rows.length){box.append(el('p',published.length?'No community listings match your filters.':'No published listings yet. Be the first to share a find.','muted'));return}
- rows.forEach(d=>{const card=el('article',undefined,'draft');const heading=el('h3'),link=el('a',d.title);link.href='/listing/'+encodeURIComponent(d.id);heading.append(link);card.append(heading,el('p',d.brand+' · '+d.category),el('p','$'+(d.price_cents/100).toFixed(2)),el('p','Seller: '+(d.seller_profiles?.display_name||'Seller'),'muted'));box.append(card);attachPhoto(card,d.photo_path,d.title);const details=el('button','View listing');details.onclick=()=>showListing(d);card.append(details,saveFindButton(d))})
+ rows.forEach(d=>{const card=el('article',undefined,'draft');const heading=el('h3'),link=el('a',d.title);link.href='/listing/'+encodeURIComponent(d.id);heading.append(link);card.append(heading,el('p',d.brand+' · '+d.category),el('p','$'+(d.price_cents/100).toFixed(2)),el('p','Seller: '+(d.seller_profiles?.display_name||'Seller'),'muted'));box.append(card);attachPhoto(card,d,d.title);const details=el('button','View listing');details.onclick=()=>showListing(d);card.append(details,saveFindButton(d))})
 }
 async function loadPublic(){const request=++publicRequest;publicState='loading';renderPublic();try{const {data,error}=await client.from('listings').select('id,seller_id,title,brand,category,price_cents,size,condition,description,photo_path,seller_profiles(display_name)').eq('status','published').eq('moderation_status','active').order('created_at',{ascending:false}).limit(100);if(request!==publicRequest)return;if(error)throw error;published=data;publicState='loaded'}catch{if(request!==publicRequest)return;publicState='error'}renderPublic()}
 for(const id of ['filter-size','filter-min-price','filter-max-price'])byId(id).addEventListener('input',renderPublic);byId('filter-condition').addEventListener('change',renderPublic);document.addEventListener('catalog-change',renderPublic);
@@ -283,7 +301,7 @@ function validShopId(id){return typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-
 function navigateSellerShop(id,event){if(window.RackNavigation){if(event)event.preventDefault();window.RackNavigation.navigate('/seller/'+encodeURIComponent(id));return}if(event)event.preventDefault();byId('detail-dialog').close();const hash='#shop/'+encodeURIComponent(id);if(location.hash===hash)openSellerShop(id);else location.hash=hash}
 function renderSellerShop(){
  const box=byId('shop-listings');box.replaceChildren();
- shopRows.forEach(d=>{const card=el('article',undefined,'draft');const heading=el('h3'),link=el('a',d.title);link.href='/listing/'+encodeURIComponent(d.id);heading.append(link);card.append(heading,el('p',d.brand+' · '+d.category),el('p',usd(d.price_cents)),el('p',d.size+' · '+d.condition,'muted'));box.append(card);attachPhoto(card,d.photo_path,d.title);const view=el('button','View listing');view.type='button';view.onclick=()=>showListing(d);card.append(view,saveFindButton(d))});
+ shopRows.forEach(d=>{const card=el('article',undefined,'draft');const heading=el('h3'),link=el('a',d.title);link.href='/listing/'+encodeURIComponent(d.id);heading.append(link);card.append(heading,el('p',d.brand+' · '+d.category),el('p',usd(d.price_cents)),el('p',d.size+' · '+d.condition,'muted'));box.append(card);attachPhoto(card,d,d.title);const view=el('button','View listing');view.type='button';view.onclick=()=>showListing(d);card.append(view,saveFindButton(d))});
 }
 async function loadSellerShopPage(append=false){
  if(!validShopId(activeShopId)||(append&&!shopCursor))return;
@@ -463,8 +481,8 @@ renderDrafts=function(){originalRender();document.querySelectorAll('#drafts .dra
 renderDrafts();
 window.addEventListener('rack-open-thread',event=>{const c=routeConversations.find(c=>c.id===event.detail.id&&user&&[c.buyer_id,c.seller_id].includes(user.id));if(c)openConversation(c);else byId('message-status').textContent=user?'This conversation is unavailable for this account.':'Sign in to open this conversation.';});
 window.addEventListener('rack-open-listing',event=>showListing({id:event.detail.id}));window.addEventListener('rack-open-seller',event=>openSellerShop(event.detail.id));
-client.auth.onAuthStateChange((_event,session)=>{setTimeout(()=>loadAccount(session),0)});
-client.auth.getSession().then(({data,error})=>{if(error){notice('This sign-in link has expired or is invalid. Request a new link.');return}loadAccount(data.session)}).catch(()=>notice('Unable to restore sign-in. Please refresh.'));
+client.auth.onAuthStateChange((_event,session)=>{setPhotoSession(session);setTimeout(()=>loadAccount(session),0)});
+client.auth.getSession().then(({data,error})=>{if(error){notice('This sign-in link has expired or is invalid. Request a new link.');return}setPhotoSession(data.session);loadAccount(data.session)}).catch(()=>notice('Unable to restore sign-in. Please refresh.'));
 })();
 </script><script src="/navigation.js"></script></body></html>
 
