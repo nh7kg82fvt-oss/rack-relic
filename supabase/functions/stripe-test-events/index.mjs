@@ -17,7 +17,18 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
   const expected=createHmac('sha256',secret).update(String(timestamp)+'.').update(raw).digest();
   if(!signatures.some(s=>/^[0-9a-f]{64}$/.test(s)&&timingSafeEqual(expected,Buffer.from(s,'hex'))))throw Error('Invalid webhook signature');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{throw Error('Invalid webhook JSON');}
-  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired'].includes(event.type))throw Error('Unsupported test event');
+  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!=='acct_1UWJZuGVbz9Pnhxd')throw Error('Unsupported test event');
+  if(['refund.created','refund.updated','refund.failed'].includes(event.type)){
+    const r=event.data?.object;
+    // Refund objects have no livemode field: the signed event supplies it.
+    // Never use refund metadata to select an order; use its bound PaymentIntent.
+    if(r?.object!=='refund'||!/^re_[A-Za-z0-9]+$/.test(r.id||'')||!/^pi_[A-Za-z0-9]+$/.test(r.payment_intent||'')||!/^ch_[A-Za-z0-9]+$/.test(r.charge||'')||r.currency!=='usd'||r.livemode===true)throw Error('Invalid test refund');
+    if(!Number.isSafeInteger(event.created)||event.created<=0||event.created>nowSeconds+30||!['pending','requires_action','succeeded','failed','canceled'].includes(r.status))throw Error('Invalid refund evidence');
+    if(event.type==='refund.failed'&&r.status!=='failed')throw Error('Conflicting refund evidence');
+    if(cents(r.amount,30000000)<1)throw Error('Invalid refund amount');
+    return event;
+  }
+  if(!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired'].includes(event.type))throw Error('Unsupported test event');
   const session=event.data?.object;
   if(session?.livemode!==false||!SESSION.test(session.id)||session.mode!=='payment'||session.metadata?.integration!=='rack_relic_test')throw Error('Invalid test session');
   uuid(session.client_reference_id);if(session.metadata?.order_id!==session.client_reference_id)throw Error('Order metadata mismatch');
@@ -31,8 +42,21 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
   }
   return event;
 }
+// Shared Node/Edge routing. Activation follows the refund migration; defaults
+// preserve the already-deployed checkout receiver until staging is upgraded.
+function stripeTestEventRpc(event,raw,{refundsEnabled=false}={}){
+  const s=event.data.object;
+  const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
+  if(event.type.startsWith('refund.')){
+    if(!refundsEnabled)throw Error('Test refund receiver not activated');
+    return {name:'rr_test_process_refund',payload:{...common,p_refund:s.id,p_payment_intent:s.payment_intent,p_charge:s.charge,p_amount:s.amount,p_currency:s.currency,p_status:s.status,p_created:event.created}};
+  }
+  const payload={...common,p_order:s.client_reference_id,p_session:s.id,p_amount:s.amount_total,p_currency:s.currency,p_paid:s.payment_status==='paid'&&s.status==='complete'};
+  if(refundsEnabled)payload.p_payment_intent=s.payment_intent??null;
+  return {name:refundsEnabled?'rr_test_process_payment_event':'rr_test_process_event',payload};
+}
 // Included in the generated staging-only Supabase entrypoint.
-export function createTestEdgeWebhook({projectUrl,serviceKey,webhookSecret,fetchImpl=fetch}={}){
+export function createTestEdgeWebhook({projectUrl,serviceKey,webhookSecret,refundsEnabled=false,fetchImpl=fetch}={}){
  const reply=(status,body)=>Response.json(body,{status,headers:{'Cache-Control':'private, no-store, max-age=0','Content-Type':'application/json','X-Content-Type-Options':'nosniff'}});
  let configured=projectUrl==='https://zvtaqzcqfdjpuwnlpzln.supabase.co'&&typeof webhookSecret==='string'&&/^whsec_[A-Za-z0-9]+$/.test(webhookSecret);
  if(typeof serviceKey!=='string')configured=false;
@@ -52,10 +76,9 @@ export function createTestEdgeWebhook({projectUrl,serviceKey,webhookSecret,fetch
    raw=Buffer.concat(parts,length);event=verifyStripeTestEvent(raw,signature,{secret:webhookSecret});
    if(event.account&&event.account!=='acct_1UWJZuGVbz9Pnhxd')throw Error('Wrong account');
   }catch{return reply(400,{error:'Invalid test notification'});}
-  const s=event.data.object;
-  const payload={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type,p_order:s.client_reference_id,p_session:s.id,p_amount:s.amount_total,p_currency:s.currency,p_paid:s.payment_status==='paid'&&s.status==='complete'};
   try{
-   const r=await fetchImpl(projectUrl+'/rest/v1/rpc/rr_test_process_event',{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
+   const {name,payload}=stripeTestEventRpc(event,raw,{refundsEnabled:refundsEnabled===true});
+   const r=await fetchImpl(projectUrl+'/rest/v1/rpc/'+name,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
    if(!r.ok)return reply(503,{error:'Test order update unavailable'});
    const age=r.headers.get('age');if(age!==null&&(!/^\d+$/.test(age)||Number(age)>0))return reply(503,{error:'Test order update unavailable'});
    const result=await r.json();if(typeof result?.duplicate!=='boolean'||typeof result.state!=='string')return reply(503,{error:'Test order update unavailable'});
@@ -63,4 +86,4 @@ export function createTestEdgeWebhook({projectUrl,serviceKey,webhookSecret,fetch
   }catch{return reply(503,{error:'Test order update unavailable'});}
  };
 }
-if(typeof Deno!=='undefined')Deno.serve(createTestEdgeWebhook({projectUrl:Deno.env.get('SUPABASE_URL'),serviceKey:Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),webhookSecret:Deno.env.get('RACK_RELIC_TEST_WEBHOOK_SECRET')}));
+if(typeof Deno!=='undefined')Deno.serve(createTestEdgeWebhook({projectUrl:Deno.env.get('SUPABASE_URL'),serviceKey:Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),webhookSecret:Deno.env.get('RACK_RELIC_TEST_WEBHOOK_SECRET'),refundsEnabled:Deno.env.get('RACK_RELIC_TEST_REFUNDS_ENABLED')==='true'}));

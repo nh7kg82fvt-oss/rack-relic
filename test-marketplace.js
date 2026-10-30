@@ -10,7 +10,19 @@
  async function orders(){
   const {orders}=await api('orders');$('orders').replaceChildren();
   if(!orders.length){const p=document.createElement('p');p.textContent='No test orders yet.';$('orders').append(p);return;}
-  for(const o of orders){const card=document.createElement('article');card.className='order';const title=document.createElement('strong');title.textContent=o.buyer_id===member?'Your purchase':'Your sale';const state=document.createElement('p');const labels={reserved:'Reserved — preparing checkout',checkout_open:'Awaiting payment',payment_pending:'Payment processing',payment_failed:'Payment failed',paid:'Payment confirmed — fulfillment on hold',expired:'Checkout expired',review:'Payment needs review'};state.textContent=labels[o.state]||'Awaiting confirmation';const total=document.createElement('p');total.textContent=o.total_cents==null?'Total is being calculated':money(o.total_cents);const ref=document.createElement('p');ref.className='small';ref.textContent='Order '+o.id;card.append(title,state,total,ref);$('orders').append(card);}
+  for(const o of orders){const card=document.createElement('article');card.className='order';const title=document.createElement('strong');title.textContent=o.buyer_id===member?'Your purchase':'Your sale';const state=document.createElement('p');const labels={reserved:'Reserved — preparing checkout',checkout_open:'Awaiting payment',payment_pending:'Payment processing',payment_failed:'Payment failed',paid:'Payment confirmed — fulfillment on hold',expired:'Checkout expired',review:'Payment needs review'};state.textContent=labels[o.state]||'Awaiting confirmation';const total=document.createElement('p');total.textContent=o.total_cents==null?'Total is being calculated':money(o.total_cents);const ref=document.createElement('p');ref.className='small';ref.textContent='Order '+o.id;card.append(title,state,total,ref);
+   if(o.refund_state&&o.refund_state!=='none'){
+    const refund=document.createElement('p');refund.className='small';
+    const labels={pending:'Test refund processing',partial:'Partial test refund confirmed',refunded:'Full test refund confirmed',failed:'Test refund failed or cancelled',review:'Test refund needs review — amounts await reconciliation'};
+    refund.textContent=labels[o.refund_state]||'Test refund awaiting review';
+    if(o.refund_state!=='review'){
+     if(Number.isSafeInteger(o.refunded_cents)&&o.refunded_cents>0)refund.textContent+=' · Refunded '+money(o.refunded_cents);
+     if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
+    }
+    card.append(refund);
+   }
+   $('orders').append(card);
+  }
  }
  async function acceptSession(session){
   if(!session.access_token||!session.user?.id)throw Error('Sign-in failed. Use your existing test account.');

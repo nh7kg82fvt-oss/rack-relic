@@ -18,6 +18,8 @@ All three were applied to staging on October 30, 2026. The seven private tables 
 
 The payment transaction deduplicates provider events, validates session/order/totals, updates inventory, writes a balanced ledger and creates held jobs. Unpaid completion holds inventory; verified delayed failure releases the unpaid claim. Late payment conflicting with another reservation enters review/suspense. Payment success alone does not release fulfillment or payouts. Fraud assessment and manual review remain separate gates.
 
+The branch also implements **refund receipt and accounting**, behind an off-by-default activation flag. `supabase/test/20261030_refund_receipts.sql` is a fourth migration, tested locally but **not applied to staging**. It binds PaymentIntents from signed Checkout events and accepts signed `refund.created`, `refund.updated` and `refund.failed` notifications. Partial/full successes, pending/action-required refunds and failures are distinct. Duplicate events cannot duplicate accounting; a later failure appends a balanced reversal. Ambiguous same-second or contradictory events remain held for reconciliation. Refunds never relist inventory, allocate tax/fees speculatively or release fulfillment. No refund-creation API or customer refund button is enabled. See [refund activation and acceptance](test-refund-acceptance.md).
+
 ## Runtime and configuration
 
 `server/test_marketplace_runtime.cjs` requires the exact preview environment/branch, staging project origin, test Stripe account, test keys and two configured staging member IDs. It returns 404 elsewhere. Server keys never reach the browser. `test_checkout_service.cjs` coordinates reservations, trusted quotes and durable attempts. `test_order_repository.cjs` verifies Supabase Auth for each member operation and refuses the production project. The browser receives only a publishable key and synthetic item details.
@@ -48,7 +50,16 @@ Use Node 22+, `npm ci --ignore-scripts`, then `npm test`. The PostgreSQL tests u
 
 A prior real Stripe test API smoke check created/retrieved an unpaid $34.10 session with simulated shipping/tax. It did not complete a payment. The newly integrated private checkout still needs authenticated browser acceptance, successful signed notification delivery, declined/cancelled/repeated attempts and a complete refund cycle. Do not claim these have passed until provider and database evidence agree.
 
-Still outstanding: real carrier quote/label/tracking integration, tax transaction/reversal jobs, actual fee reconciliation, seller onboarding, transfers/payouts/refunds, notifications, operator/dispute tools and checkout abuse limits. Pending jobs are not evidence those workers ran. Fulfillment and payout jobs remain held.
+Still outstanding: real carrier quote/label/tracking integration, tax transaction/reversal jobs, actual fee reconciliation, seller onboarding, transfers/payouts, authorized refund issuance and provider reconciliation, notifications, operator/dispute tools and checkout abuse limits. Pending jobs are not evidence those workers ran. Fulfillment and payout jobs remain held.
+
+### Cloud verification on October 30, 2026
+
+- Baseline: 205 tests passed. After refund receipt/accounting and order-view additions: **227 tests passed**, including actual PostgreSQL execution in PGlite and signed Node/Edge-to-SQL tests. These are local tests in the cloud executor, not deployed Supabase acceptance or multi-connection load tests.
+- The connected Stripe context was verified as `acct_1UWJZuGVbz9Pnhxd`, `livemode=false`. Listing all Checkout sessions returned two open/unpaid sessions; listing refunds and the seven checkout/refund event types returned no results, with no additional pages. There is still no successful integrated payment/refund evidence.
+- The approved endpoint `we_1UWLjuGVbz9Pnhxdx69sMqDI` is enabled at the staging Edge URL and still subscribes only to the original four Checkout event types. No destination settings were changed.
+- An unsigned cloud POST to the staging receiver returned **400**. Unauthenticated access to the private preview redirected (**302**) instead of exposing the page. Protection was not changed.
+- This cloud session has GitHub and Stripe access, but no authenticated Supabase/Vercel management connection or staging database credential. It did not apply the refund migration, redeploy the Edge function, set its activation flag or add refund subscriptions. The existing deployed receiver remains in its prior checkout-only configuration.
+- The password-free sign-in is still awaiting email receipt and same-profile callback verification. No browser credential was requested, extracted or transferred.
 
 ## Launch preparation
 

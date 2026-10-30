@@ -1,11 +1,11 @@
 'use strict';
 const {createHash}=require('node:crypto');
-const {verifyStripeTestEvent}=require('./marketplace_test_checkout.cjs');
+const {verifyStripeTestEvent,stripeTestEventRpc}=require('./marketplace_test_checkout.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const project=url.hostname.split('.')[0];
  if(!/^[a-z0-9]{20}$/.test(project)||url.hostname!==project+'.supabase.co'||project===PRODUCTION_PROJECT||url.protocol!=='https:'||url.port||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -63,13 +63,13 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    const user=await member(authorization);const rows=await rpc('rr_test_member_orders',{p_member:user});
    if(!Array.isArray(rows)||rows.length>100)throw new OrderServiceUnavailable('Invalid order list');
    if(rows.some(row=>!UUID.test(row?.id||'')||(row.buyer_id!==user&&row.seller_id!==user)))throw new OrderServiceUnavailable('Order ownership mismatch');
-   const fields=['id','listing_id','buyer_id','seller_id','state','risk_status','item_cents','buyer_fee_cents','shipping_cents','tax_cents','total_cents','created_at','updated_at'];
+   const fields=['id','listing_id','buyer_id','seller_id','state','risk_status','item_cents','buyer_fee_cents','shipping_cents','tax_cents','total_cents','refund_state','refunded_cents','refund_pending_cents','created_at','updated_at'];
    return rows.map(row=>Object.fromEntries(fields.filter(k=>Object.hasOwn(row,k)).map(k=>[k,row[k]])));
   },
   async acceptStripeEvent({rawBody,signature,webhookSecret,nowSeconds}){
    const event=verifyStripeTestEvent(rawBody,signature,{secret:webhookSecret,...(nowSeconds===undefined?{}:{nowSeconds})});
-   const s=event.data.object;
-   return rpc('rr_test_process_event',{p_event:event.id,p_payload_hash:createHash('sha256').update(rawBody).digest('hex'),p_type:event.type,p_order:s.client_reference_id,p_session:s.id,p_amount:s.amount_total,p_currency:s.currency,p_paid:s.payment_status==='paid'&&s.status==='complete'});
+   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true});
+   return rpc(name,payload);
   },
   // Assessment must come from evaluateTestCharge with freshly fetched Stripe data.
   async recordRisk(evidence){
