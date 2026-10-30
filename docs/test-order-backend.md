@@ -1,6 +1,6 @@
 # Isolated order backend: integration handoff
 
-This branch now contains an executable PostgreSQL order ledger plus server-side adapters. **It has not been deployed or connected to the public catalog.** Existing public checkout remains closed. No new public API routes were added.
+This branch contains an executable PostgreSQL order ledger plus server-side adapters. On October 30, 2026, the ledger was installed and verified in the existing isolated staging project. It is not connected to the public catalog. Existing public checkout remains closed. The only new route is a read-only setup status check, limited to this preview branch; no payment, order-write or webhook route is exposed.
 
 ## Validation
 
@@ -33,7 +33,9 @@ All financial tables have RLS enabled with no browser grants. RPC execution is r
 
 ## Remaining deployment work
 
-Supabase and Vercel are not connected in this session. Their access is required to select a test project, inspect authoritative schemas, install the migration, configure server-only sandbox credentials and deploy a protected preview. Do not create a billable project or paid service without the required authorization.
+The existing staging Supabase project was inspected and the test ledger installed. Cloud SQL checks verified six RLS-protected tables, five service-role-only RPCs, retry-safe reservation, payment-event deduplication, balanced accounting, initial and reviewed fraud holds, and unrelated-member isolation. All synthetic verification rows were rolled back; the catalog and order tables remain empty. Production data and policies were not changed.
+
+Vercel retains Standard Protection on previews. Test credentials use the branch-specific `RACK_RELIC_TEST_SUPABASE_URL`, `RACK_RELIC_TEST_SUPABASE_SERVER_KEY`, `RACK_RELIC_TEST_STRIPE_KEY` and `RACK_RELIC_TEST_STRIPE_ACCOUNT` settings. No secret values belong in source control. `/api/test-setup-status` checks the staging RPC connection and Stripe account identity/test mode, returns no keys, account IDs or financial data, and always reports checkout disabled. It returns 404 outside the exact test preview branch and rejects live keys or a production database before sending any request. Configuration/deployment is only verified when that deployed endpoint returns ready. Do not create a billable project or paid service without the required authorization.
 
 Before adding public wrappers, implement authenticated reservation/quote/Checkout orchestration; seed/import only synthetic test catalog data; configure raw webhook bodies; reconcile uncertain Checkout creation/attachment rather than blindly retrying; and confirm that test identities/keys cannot address production data. The synthetic test catalog must not be represented as real inventory.
 
