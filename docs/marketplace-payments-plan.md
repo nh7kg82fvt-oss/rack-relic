@@ -43,7 +43,7 @@ Public US pricing checked October 30, 2026. These are reference rates, not an ac
 | Sandbox / launch | Sandbox can test account creation, verification outcomes, charges, transfers and payouts. Live business/seller verification and configuration remain separate | Sandbox available with a developer account. PayPal explicitly requires platform/marketplace approval before live credentials |
 | Practical fit | Recommended first engineering path: clear sandbox tooling and hosted onboarding, with explicit platform liability | Credible alternative, especially if PayPal demand matters; partner approval and fee/disbursement enablement add uncertainty |
 
-An ordinary CCP/EPI merchant account or a payout-only API is not a substitute for a marketplace product. Before using any such alternative, obtain written support for collecting buyer funds for unrelated sellers, submerchant onboarding, split settlement, refunds, reserves and chargeback liability. Do not route every seller through a single ordinary merchant account merely because it can accept a card.
+An ordinary single-merchant account or a payout-only API is not a substitute for a marketplace product. Before using any such alternative, obtain written support for collecting buyer funds for unrelated sellers, submerchant onboarding, split settlement, refunds, reserves and chargeback liability. Do not route every seller through a single ordinary merchant account merely because it can accept a card.
 
 ## Fees and funds flow
 
@@ -100,7 +100,7 @@ Checkout return URLs are deliberately fixed to a localhost test harness; that ha
 
 ## Subsequent tax configuration and implementation
 
-The owner requested the remaining test integration and instructed us to use CCP's state-listed business address. The full address was verified in existing records and saved in the sandbox Tax head-office setting, replacing the initial documented sample address. The actual address and private provider IDs are intentionally omitted from this public repository.
+Rack Relic LLC and Clear Choice Payments are separate companies with a common owner. Rack Relic's legal entity, tax profile, merchant onboarding, support and marketplace operations must identify Rack Relic LLC. The owner-provided Washington formation certificate and IRS confirmation were verified on October 30, 2026 and both identify Rack Relic LLC. Any provider legal-entity profile must be checked against those records before live onboarding. A shared owner or mailing address does not establish a relationship between the two companies. Private tax identifiers and provider IDs do not belong in this public repository.
 
 Verified Tax settings: `livemode: false`, `status: active`, default tax behavior `exclusive`, default tax code `txcd_99999999` (general physical goods). A default code is only a fallback; individual listings need specific classification. Stripe's catalog returned `txcd_30011000` for ordinary clothing/everyday footwear and `txcd_30060001` for purses/handbags. Athletic equipment, jewelry and other accessories require their own classifications. The returned platform-fee candidate `txcd_90050001` describes fees charged to businesses/sellers, so it has **not** been adopted for Rack Relic's buyer fee. That classification remains required explicitly by the adapter.
 

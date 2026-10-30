@@ -99,13 +99,15 @@
  $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];sessionStorage.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();note('Signed out of the private test area.');controls();});
  $('refresh').addEventListener('click',()=>operation(async version=>{await orders();if(version===authVersion)note('Orders refreshed from the test database.');}));
  $('checkout').addEventListener('click',()=>operation(async version=>{
-  const key='rr-private-test-order-'+member;let orderId=sessionStorage.getItem(key);if(!orderId){orderId=crypto.randomUUID();sessionStorage.setItem(key,orderId);}
+  const key='rr-private-test-order-'+member+':'+config.listing.id;let orderId=sessionStorage.getItem(key);
+  if(!orderId&&config.listing.id==='73737373-7373-4373-8373-737373737373')orderId=sessionStorage.getItem('rr-private-test-order-'+member);
+  if(!orderId)orderId=crypto.randomUUID();sessionStorage.setItem(key,orderId);
   note('Reserving the test item and calculating the total…');const data=await api('checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId,listingId:config.listing.id,to:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'}})});
   if(version!==authVersion)return;await orders();if(version!==authVersion)return;
   if(data.url){const u=new URL(data.url);if(u.protocol!=='https:'||u.hostname!=='checkout.stripe.com')throw Error('Unexpected checkout destination');location.assign(u.href);}else note('This order already has a payment result. Check the order list.');
  }));
  (async()=>{try{
-  config=await api('config');emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
+  config=await api('config');$('fixture-title').textContent=config.listing?.title||'Synthetic test jacket';emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
   let saved;try{saved=JSON.parse(sessionStorage.getItem('rr-private-test-session'));}catch{}
   if(saved?.token&&saved?.member){token=saved.token;member=saved.member;const version=authVersion;$('identity').textContent=saved.email||'Staging member';try{await orders();}catch{if(version===authVersion){token=null;member=null;sessionStorage.removeItem('rr-private-test-session');}}if(version!==authVersion)return;}
   note(new URLSearchParams(location.search).get('view')==='cancel'?'Checkout was cancelled. The item remains reserved until Stripe confirms expiry.':config.notice);controls();

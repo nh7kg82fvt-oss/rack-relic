@@ -26,3 +26,7 @@ test('refund access check is disabled by default and returns no configured ident
  }
  for(const [method,url,status] of [['POST','/api/test-marketplace?action=refund-access',405],['GET','/api/test-marketplace?action=refund-access&actor=other',400]]){const r=res();await createTestMarketplaceRuntime({env:active,fetchImpl:()=>assert.fail('network')})({method,url},r);assert.equal(r.statusCode,status);}
 });
+test('only the two fixed synthetic fixtures can be selected in the private branch',async()=>{
+ const r=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'84848484-8484-4484-8484-848484848484'}})({method:'GET',url:'/api/test-marketplace?action=config'},r);assert.equal(r.statusCode,200);assert.deepEqual(JSON.parse(r.body).listing,{id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500});
+ const bad=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'99999999-9999-4999-8999-999999999999'},fetchImpl:()=>assert.fail('network')})({method:'GET',url:'/api/test-marketplace?action=config'},bad);assert.equal(bad.statusCode,503);
+});
