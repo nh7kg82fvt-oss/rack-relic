@@ -8,7 +8,7 @@ const {createTestOrderRepository}=require('../server/test_order_repository.cjs')
 const {createTestWebhookHandler,createTestOrdersHandler}=require('../server/test_order_handlers.cjs');
 let db;
 const listing='44444444-4444-4444-8444-444444444444',seller='33333333-3333-4333-8333-333333333333',buyer='22222222-2222-4222-8222-222222222222',buyer2='66666666-6666-4666-8666-666666666666',order='11111111-1111-4111-8111-111111111111',order2='55555555-5555-4555-8555-555555555555';
-before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261030_order_ledger.sql'),'utf8'));});
+before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const file of ['20261030_order_ledger.sql','20261030_payment_recovery.sql'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/'+file),'utf8'));});
 after(async()=>{await db?.close();});
 beforeEach(async()=>{await db.exec('truncate rr_sandbox.catalog cascade;');await db.query("insert into rr_sandbox.catalog(id,seller_id,title,price_cents) values($1,$2,'Synthetic test jacket',2500)",[listing,seller]);});
 async function reserve(id=order,member=buyer){return (await db.query('select public.rr_test_reserve($1,$2,$3) as result',[id,listing,member])).rows[0].result;}
@@ -41,7 +41,7 @@ test('reservation locks price and visibility; invalid or null checkout totals ca
  await assert.rejects(attach(order,'cs_test_other'),/not eligible/);
 });
 test('unpaid completion does not sell; paid notification sells once and balances the ledger',async()=>{
- await reserve();await attach();assert.equal((await event({paid:false})).state,'checkout_open');
+ await reserve();await attach();assert.equal((await event({paid:false})).state,'payment_pending');
  assert.equal((await event({id:'evt_paid',hash:'d'.repeat(64)})).state,'paid');
  assert.equal((await db.query('select status from rr_sandbox.catalog')).rows[0].status,'sold');
  assert.equal((await event({id:'evt_paid',hash:'d'.repeat(64)})).duplicate,true);
@@ -110,4 +110,48 @@ test('authenticated order endpoint ignores caller-selected member IDs and reject
  assert.equal(mine.statusCode,200);assert.equal(mine.body.orders.length,1);assert.equal(mine.body.orders[0].buyer_id,buyer);assert.equal(mine.body.orders[0].session_id,undefined);
  const denied=res();await handler({method:'GET',headers:{}},denied);assert.equal(denied.statusCode,401);
  const disabled=res();await createTestOrdersHandler({repository:r})({method:'GET',headers:{authorization:'Bearer fixture'}},disabled);assert.equal(disabled.statusCode,503);
+});
+
+test('delayed payment retains inventory through local expiry and late provider expiry',async()=>{
+ await reserve();await attach();
+ assert.equal((await event({paid:false})).state,'payment_pending');
+ await db.exec("update rr_sandbox.orders set expires_at=now()-interval '1 hour'");
+ await assert.rejects(reserve(order2,buyer2),/reserved/);
+ await assert.rejects(db.exec('update rr_sandbox.catalog set price_cents=2600'),/cannot be edited/);
+ assert.equal((await event({id:'evt_lateexpiry',hash:'d'.repeat(64),type:'checkout.session.expired',paid:false})).state,'payment_pending');
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.ledger_entries')).rows[0].count,0);
+ assert.equal((await event({id:'evt_delayedpaid',hash:'e'.repeat(64),type:'checkout.session.async_payment_succeeded'})).state,'paid');
+ assert.equal((await db.query('select sum(amount_cents)::int as balance from rr_sandbox.ledger_entries')).rows[0].balance,0);
+});
+test('delayed failure releases only unpaid inventory and replays cannot reopen or duplicate an order',async()=>{
+ await reserve();await attach();await event({paid:false});
+ const failure={id:'evt_failed',hash:'d'.repeat(64),type:'checkout.session.async_payment_failed',paid:false};
+ assert.equal((await event(failure)).state,'payment_failed');assert.equal((await event(failure)).duplicate,true);
+ assert.equal((await event({id:'evt_lateunpaid',hash:'e'.repeat(64),paid:false})).state,'payment_failed');
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.jobs')).rows[0].count,0);
+ await reserve(order2,buyer2);
+ assert.equal((await event({id:'evt_latesuccess',hash:'f'.repeat(64),type:'checkout.session.async_payment_succeeded'})).state,'review');
+ assert.equal((await db.query('select sum(amount_cents)::int as balance from rr_sandbox.ledger_entries')).rows[0].balance,0);
+ assert.equal((await db.query('select status from rr_sandbox.catalog')).rows[0].status,'published');
+});
+test('late failure cannot reverse a paid sale; contradictory event claims never enter the ledger',async()=>{
+ await reserve();await attach();
+ for(const patch of [{type:'checkout.session.expired',paid:true},{type:'checkout.session.async_payment_failed',paid:true},{type:'checkout.session.async_payment_succeeded',paid:false}])await assert.rejects(event(patch),/Conflicting/);
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.provider_events')).rows[0].count,0);
+ await event();assert.equal((await event({id:'evt_latefailure',hash:'d'.repeat(64),type:'checkout.session.async_payment_failed',paid:false})).state,'paid');
+ await assert.rejects(reserve(order2,buyer2),/unavailable/);
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.ledger_entries')).rows[0].count,5);
+});
+test('signed delayed failure passes through the raw webhook adapter and SQL, then duplicates safely',async()=>{
+ await reserve();await attach();
+ const handler=createTestWebhookHandler({repository:repository(),webhookSecret:'whsec_fixture',enabled:true});
+ for(const [id,type] of [['evt_pending','checkout.session.completed'],['evt_failure','checkout.session.async_payment_failed'],['evt_failure','checkout.session.async_payment_failed']]){
+  const payload={id,livemode:false,type,data:{object:{id:'cs_test_fixture',livemode:false,mode:'payment',currency:'usd',amount_total:3427,client_reference_id:order,metadata:{order_id:order,integration:'rack_relic_test'},payment_status:'unpaid',status:'complete'}}};
+  const raw=Buffer.from(JSON.stringify(payload)),stamp=Math.floor(Date.now()/1000),signature='t='+stamp+',v1='+createHmac('sha256','whsec_fixture').update(stamp+'.').update(raw).digest('hex');
+  const req=Readable.from([raw]);req.method='POST';req.headers={'stripe-signature':signature};const response=res();await handler(req,response);assert.equal(response.statusCode,200);
+ }
+ assert.equal((await db.query('select state from rr_sandbox.orders')).rows[0].state,'payment_failed');
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.provider_events')).rows[0].count,2);
+ assert.equal((await db.query('select count(*)::int as count from rr_sandbox.ledger_entries')).rows[0].count,0);
+ await reserve(order2,buyer2);
 });
