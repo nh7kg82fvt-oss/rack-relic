@@ -8,7 +8,7 @@ Start with a **Stripe Connect sandbox**, Stripe-hosted Checkout and hosted selle
 
 No live account activation is required to develop against a sandbox. A Stripe login, sandbox access, Connect configuration and sandbox keys are still needed. Stripe's sandbox capabilities can be less restrictive than live capabilities: passing tests does not establish launch eligibility. Wayne subsequently authorized proceeding with sandbox setup. Stripe is now connected to **Rack Relic sandbox** (`livemode: false`). The initial module tests used mocked responses; a subsequent isolated provider API smoke test created one unpaid test Checkout Session. See the verified results below.
 
-This branch adds server-only test checkout construction and raw-body webhook verification, exercised with mocked HTTP responses. It adds **no public route**, transfers, refunds, live account creation, database migrations, checkout UI, secrets or environment changes. The existing public Buy button and manifest remain closed. No production deployment or database state was inspected or changed by this review.
+This branch adds server-only test checkout construction, raw-body webhook verification and a Stripe Tax adapter, exercised with mocked HTTP responses. It adds **no public route**, transfers, refunds, live account creation, database migrations, checkout UI, secrets or environment changes. Sandbox Tax settings were subsequently configured through the connected account as described below. The existing public Buy button and manifest remain closed. No production deployment or database state was inspected or changed by this review.
 
 ## What main actually contains
 
@@ -95,8 +95,34 @@ Checkout return URLs are deliberately fixed to a localhost test harness; that ha
 - Two pre-existing synthetic connected-account fixtures are present. One has an Express dashboard, platform-paid fees/platform loss responsibility, active transfers, a test bank, payouts enabled and no currently due requirements. These were not created or onboarded by this work and are not real seller eligibility evidence.
 - Stripe's implementation planner confirms separate charges/transfers for delayed release, platform loss/fee responsibility, fee retention by transferring less, and Accounts v2 recipient configuration for new marketplace seller accounts. Do not use `application_fee_amount` with separate charges/transfers. The planner's preference for embedded onboarding does not invalidate the separately documented hosted-onboarding option.
 - Created one provider test session with `livemode: false`, `amount_total: 3100`, `status: open`, `payment_status: unpaid`. It uses a synthetic order reference and is unrelated to website inventory or real members. Components are $25 fictional item + $1 buyer fee + $5 synthetic shipping. No tax service was invoked and this is not a final sale quote. The return URLs point only to the unimplemented localhost harness. It expires automatically.
-- No test payment was completed. No seller transfer, bank payout, refund, carrier quote, label purchase, tax calculation, order row or webhook delivery was executed. Creating an unpaid provider session is an API smoke test, not end-to-end checkout completion.
+- At that first smoke check, no test payment, seller transfer, bank payout, refund, carrier quote, label purchase, tax calculation, order row or webhook delivery had been executed. A subsequent zero-tax diagnostic is recorded below. Creating an unpaid provider session is an API smoke test, not end-to-end checkout completion.
 - Current connector limitations: v2 retrieval of the platform account returned a permission denial; v1 account and balance reads work. Searches exposed account/transfer reads but no create-connected-account or create-Connect-transfer operation. Do not infer that more general account authorization alone would expose unsupported operations. Continue those tests through a supported secure server-side sandbox integration or an approved Dashboard workflow; never request API secrets in chat.
+
+## Subsequent tax configuration and implementation
+
+The owner requested the remaining test integration and instructed us to use CCP's state-listed business address. The full address was verified in existing records and saved in the sandbox Tax head-office setting, replacing the initial documented sample address. The actual address and private provider IDs are intentionally omitted from this public repository.
+
+Verified Tax settings: `livemode: false`, `status: active`, default tax behavior `exclusive`, default tax code `txcd_99999999` (general physical goods). A default code is only a fallback; individual listings need specific classification. Stripe's catalog returned `txcd_30011000` for ordinary clothing/everyday footwear and `txcd_30060001` for purses/handbags. Athletic equipment, jewelry and other accessories require their own classifications. The returned platform-fee candidate `txcd_90050001` describes fees charged to businesses/sellers, so it has **not** been adopted for Rack Relic's buyer fee. That classification remains required explicitly by the adapter.
+
+One sandbox Tax API diagnostic used a public sample Seattle destination and synthetic $25 goods/$1 fee/$5 shipping components. The $1 fee used the goods code solely as a test fixture, not as a production tax determination. Stripe returned a $31 total, zero tax and `taxability_reason: not_collecting`. There are no active registrations. This result is **not** evidence of tax exemption and must not enable checkout.
+
+Automatic approval review rejected creating the proposed Washington sandbox sales-tax registration because it required proof of registration or explicit approval for that persistent compliance setting. No registration was created and no workaround was attempted. Adding a sandbox registration is distinct from registering with a tax authority; the next step requires the owner's explicit approval for the simulated sandbox setting. Live tax registration, filing/remittance and actual legal obligations remain unverified.
+
+`server/stripe_test_tax.cjs` now provides a server-only test adapter that:
+
+- accepts only test secret keys and checks test-mode settings/registrations;
+- requires complete US origin/destination addresses and an order-bound shipping quote tied to the same destination hash;
+- requires an active, unexpired sandbox state sales-tax registration before calculation;
+- requires explicit item and buyer-fee tax codes, preventing an assumed exemption;
+- sends item, buyer fee and shipping separately to Stripe Tax, checks exact amounts/currency/line references/tax-code identity, and reconciles the tax breakdown;
+- rejects `not_collecting`, missing/unknown taxability evidence, live-mode responses, expired quotes, transport errors and altered order amounts;
+- emits a short-lived tax quote usable by the existing checkout builder. The builder independently rejects blocked tax, `not_collecting` and destination mismatches.
+
+All **142 Node tests pass**, including eight new tax scenarios and the existing checkout, signature, account, gallery, media and tracking checks. The new adapter's provider HTTP path is mocked in tests; the connected-account Tax diagnostic was executed separately. No secret key was provided to the repository/runtime, no tax transaction was recorded after payment, and no public tax/checkout route was enabled.
+
+Remaining access and implementation dependencies: Supabase and Vercel are available integrations but are not connected to this session. The full Supabase schema, an isolated test database, hosting configuration and secure sandbox runtime credentials are still needed to implement and deploy the durable order ledger, inventory reservations, webhook processing, shipping jobs, transfers/refunds, notifications and customer order screens. These are outstanding, not completed by the tax adapter. No live payments or paid services were enabled.
+
+See [Stripe Tax sandbox testing](https://docs.stripe.com/tax/testing) and [Tax settings API](https://docs.stripe.com/tax/settings-api).
 
 ## Official sources
 

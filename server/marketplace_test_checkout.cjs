@@ -15,20 +15,27 @@ function quote(value,orderId,now){
 }
 // Input must come from a trusted server snapshot after reservation, never a
 // request body. This validator does NOT implement authentication or a DB lock.
-function buildTestCheckout({orderId,buyerId,listing,shippingQuote,taxQuote},now=Date.now()){
+function buildTestOrderBase({orderId,buyerId,listing,shippingQuote},now=Date.now()){
   uuid(orderId);uuid(buyerId);uuid(listing?.id);uuid(listing?.seller_id);
   if(!Number.isSafeInteger(now)||buyerId===listing.seller_id||listing.status!=='published'||listing.moderation_status!=='active')throw Error('Listing is not eligible');
   if(!['shipping','both'].includes(listing.delivery_mode))throw Error('Initial test checkout supports US shipping only');
   const itemCents=cents(listing.price_cents);if(itemCents<100)throw Error('Invalid item price');
   if(shippingQuote?.listingId!==listing.id||shippingQuote?.listingUpdatedAt!==listing.updated_at||typeof listing.updated_at!=='string'||!Number.isFinite(Date.parse(listing.updated_at)))throw Error('Shipping quote does not match the listing version');
   const shippingCents=quote(shippingQuote,orderId,now);cents(shippingCents,100000);
-  if(taxQuote?.status!=='calculated'||taxQuote?.currency!=='USD'||taxQuote?.country!=='US')throw Error('An explicit US test tax calculation is required');
   const buyerFeeCents=Math.floor((itemCents*4+50)/100);
   const taxableTotalCents=itemCents+buyerFeeCents+shippingCents;
-  if(taxQuote.baseCents!==taxableTotalCents)throw Error('Tax quote does not match checkout');
-  const taxCents=quote(taxQuote,orderId,now);
   return Object.freeze({test:true,orderId,listingId:listing.id,sellerId:listing.seller_id,
-    currency:'USD',itemCents,buyerFeeCents,shippingCents,taxCents,
+    currency:'USD',itemCents,buyerFeeCents,shippingCents,baseCents:taxableTotalCents});
+}
+function buildTestCheckout(input,now=Date.now()){
+  const base=buildTestOrderBase(input,now),{taxQuote}=input;
+  const {orderId,baseCents:taxableTotalCents}=base;
+  if(taxQuote?.status!=='calculated'||taxQuote?.currency!=='USD'||taxQuote?.country!=='US')throw Error('An explicit US test tax calculation is required');
+  if(taxQuote.baseCents!==taxableTotalCents)throw Error('Tax quote does not match checkout');
+  if(taxQuote.blocked===true||taxQuote.taxabilityReasons?.includes('not_collecting'))throw Error('Tax registration is not ready');
+  if(taxQuote.destinationHash!==undefined&&taxQuote.destinationHash!==input.shippingQuote.destinationHash)throw Error('Tax and shipping destinations do not match');
+  const taxCents=quote(taxQuote,orderId,now);
+  return Object.freeze({...base,taxCents,
     totalCents:taxableTotalCents+taxCents});
 }
 function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch}={}){
@@ -83,4 +90,4 @@ function matchesPaidTestOrder(event,order){
   const s=event?.data?.object;
   return !!(order?.test===true&&event?.livemode===false&&['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&s?.livemode===false&&s.payment_status==='paid'&&s.status==='complete'&&s.mode==='payment'&&s.currency==='usd'&&s.metadata?.integration==='rack_relic_test'&&s.id===order.sessionId&&s.client_reference_id===order.orderId&&s.metadata?.order_id===order.orderId&&s.amount_total===order.totalCents);
 }
-module.exports={buildTestCheckout,createStripeTestCheckoutClient,verifyStripeTestEvent,matchesPaidTestOrder};
+module.exports={buildTestOrderBase,buildTestCheckout,createStripeTestCheckoutClient,verifyStripeTestEvent,matchesPaidTestOrder};
