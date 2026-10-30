@@ -5,7 +5,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[]}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const project=url.hostname.split('.')[0];
  if(!/^[a-z0-9]{20}$/.test(project)||url.hostname!==project+'.supabase.co'||project===PRODUCTION_PROJECT||url.protocol!=='https:'||url.port||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -28,7 +28,31 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  }
  const id=v=>{if(!UUID.test(v||''))throw new OrderAccessDenied('Invalid order identifier');return v;};
  const rpc=(name,args)=>request('/rest/v1/rpc/'+name,args);
+ async function refundOperator(authorization){
+  if(refundsEnabled!==true||refundRequestsEnabled!==true||project!=='zvtaqzcqfdjpuwnlpzln'||!Array.isArray(allowedRefundOperatorIds)||!allowedRefundOperatorIds.length||!allowedRefundOperatorIds.every(v=>UUID.test(v)&&allowedMemberIds?.includes(v)))throw new OrderAccessDenied('Refund operator access required');
+  const actor=await member(authorization);
+  if(!allowedRefundOperatorIds.includes(actor))throw new OrderAccessDenied('Refund operator access required');return actor;
+ }
  return Object.freeze({
+  async prepareRefund({authorization,requestId,orderId,amountCents}){
+   id(requestId);id(orderId);
+   if(!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>30000000)throw new OrderAccessDenied('Invalid refund amount');
+   const actor=await refundOperator(authorization);
+   return rpc('rr_test_prepare_refund',{p_request:requestId,p_order:orderId,p_actor:actor,p_amount:amountCents});
+  },
+  async getRefundRequest({authorization,requestId}){
+   id(requestId);const actor=await refundOperator(authorization);
+   return rpc('rr_test_get_refund_request',{p_request:requestId,p_actor:actor});
+  },
+  async dispatchRefund({authorization,requestId}){
+   id(requestId);const actor=await refundOperator(authorization);
+   return rpc('rr_test_dispatch_refund',{p_request:requestId,p_actor:actor});
+  },
+  async saveRefund({authorization,requestId,refundId,chargeId}){
+   id(requestId);const actor=await refundOperator(authorization);
+   if(!/^re_[A-Za-z0-9]+$/.test(refundId||'')||!/^ch_[A-Za-z0-9]+$/.test(chargeId||''))throw new OrderServiceUnavailable('Invalid refund identity');
+   return rpc('rr_test_save_refund',{p_request:requestId,p_actor:actor,p_refund:refundId,p_charge:chargeId});
+  },
   async reserve({authorization,orderId,listingId}){
    id(orderId);id(listingId);const buyer=await member(authorization);
    return rpc('rr_test_reserve',{p_order:orderId,p_listing:listingId,p_buyer:buyer});
@@ -68,7 +92,7 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   },
   async acceptStripeEvent({rawBody,signature,webhookSecret,nowSeconds}){
    const event=verifyStripeTestEvent(rawBody,signature,{secret:webhookSecret,...(nowSeconds===undefined?{}:{nowSeconds})});
-   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true});
+   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true});
    return rpc(name,payload);
   },
   // Assessment must come from evaluateTestCharge with freshly fetched Stripe data.

@@ -145,7 +145,7 @@ test('generated Edge refund receipt and payment binding use the exact staging RP
  assert.equal((await h(make(e))).status,200);assert.equal((await h(make())).status,200);assert.deepEqual(await ledger(),{count:7,balance:0});
  const disabled=createTestEdgeWebhook({...config,fetchImpl:()=>{throw Error('must not call');}});assert.equal((await disabled(make())).status,503);
 });
-test('routing is disabled by default and does not expose an API that creates refunds',()=>{
+test('receipt routing is disabled by default and only selects the receipt RPC',()=>{
  const e=verify(),raw=signed().rawBody;assert.throws(()=>stripeTestEventRpc(e,raw),/not activated/);
  const call=stripeTestEventRpc(e,raw,{refundsEnabled:true});assert.equal(call.name,'rr_test_process_refund');assert.equal(call.payload.p_order,undefined);
 });

@@ -20,6 +20,8 @@ The payment transaction deduplicates provider events, validates session/order/to
 
 The branch also implements **refund receipt and accounting**, behind an off-by-default activation flag. `supabase/test/20261030_refund_receipts.sql` is a fourth migration, tested locally but **not applied to staging**. It binds PaymentIntents from signed Checkout events and accepts signed `refund.created`, `refund.updated` and `refund.failed` notifications. Partial/full successes, pending/action-required refunds and failures are distinct. Duplicate events cannot duplicate accounting; a later failure appends a balanced reversal. Ambiguous same-second or contradictory events remain held for reconciliation. Refunds never relist inventory, allocate tax/fees speculatively or release fulfillment. No refund-creation API or customer refund button is enabled. See [refund activation and acceptance](test-refund-acceptance.md).
 
+An **operator-only test refund request API** is now implemented, also disabled by default. The fifth migration, `supabase/test/20261030_refund_requests.sql`, is tested locally but **not applied to staging**. A configured allowlisted operator is reauthenticated for every request operation. The server freezes the order/payment/amount and records a durable dispatch before one Stripe POST. It verifies the exact sandbox, successful PaymentIntent, captured charge, dispute status and remaining refundable amount. A known refund resumes with GET only. An unknown creation remains held even after Stripe's idempotency window; a matching signed receipt can recover its lost ID. HTTP responses never book refunded money. See the same activation guide for the additional flags and operator configuration.
+
 ## Runtime and configuration
 
 `server/test_marketplace_runtime.cjs` requires the exact preview environment/branch, staging project origin, test Stripe account, test keys and two configured staging member IDs. It returns 404 elsewhere. Server keys never reach the browser. `test_checkout_service.cjs` coordinates reservations, trusted quotes and durable attempts. `test_order_repository.cjs` verifies Supabase Auth for each member operation and refuses the production project. The browser receives only a publishable key and synthetic item details.
@@ -50,7 +52,7 @@ Use Node 22+, `npm ci --ignore-scripts`, then `npm test`. The PostgreSQL tests u
 
 A prior real Stripe test API smoke check created/retrieved an unpaid $34.10 session with simulated shipping/tax. It did not complete a payment. The newly integrated private checkout still needs authenticated browser acceptance, successful signed notification delivery, declined/cancelled/repeated attempts and a complete refund cycle. Do not claim these have passed until provider and database evidence agree.
 
-Still outstanding: real carrier quote/label/tracking integration, tax transaction/reversal jobs, actual fee reconciliation, seller onboarding, transfers/payouts, authorized refund issuance and provider reconciliation, notifications, operator/dispute tools and checkout abuse limits. Pending jobs are not evidence those workers ran. Fulfillment and payout jobs remain held.
+Still outstanding: real carrier quote/label/tracking integration, tax transaction/reversal jobs, actual fee reconciliation, seller onboarding, transfers/payouts, refund deployment/provider acceptance and ambiguous-evidence reconciliation, notifications, operator/dispute UI and checkout abuse limits. Pending jobs are not evidence those workers ran. Fulfillment and payout jobs remain held.
 
 ### Cloud verification on October 30, 2026
 
@@ -60,6 +62,8 @@ Still outstanding: real carrier quote/label/tracking integration, tax transactio
 - An unsigned cloud POST to the staging receiver returned **400**. Unauthenticated access to the private preview redirected (**302**) instead of exposing the page. Protection was not changed.
 - This cloud session has GitHub and Stripe access, but no authenticated Supabase/Vercel management connection or staging database credential. It did not apply the refund migration, redeploy the Edge function, set its activation flag or add refund subscriptions. The existing deployed receiver remains in its prior checkout-only configuration.
 - The password-free sign-in is still awaiting email receipt and same-profile callback verification. No browser credential was requested, extracted or transferred.
+
+Cloud continuation: **250 tests now pass** after operator refund dispatch/recovery was added. Tests include lost POST responses and database saves, webhook-before-response races, recovery after the idempotency retention window, financial identity isolation, disputed/refunded charge rejection, receipt linkage, grants and disabled-route checks. Stripe was read again and still returned two open/unpaid Checkout sessions and no refunds, with no additional pages. No refund POST was sent to Stripe by this cloud work. Neither refund migration nor Edge/Preview refund activation settings were applied remotely. All implementation and tests ran without the owner's Mac.
 
 ## Launch preparation
 

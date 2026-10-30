@@ -129,6 +129,7 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
     if(r?.object!=='refund'||!/^re_[A-Za-z0-9]+$/.test(r.id||'')||!/^pi_[A-Za-z0-9]+$/.test(r.payment_intent||'')||!/^ch_[A-Za-z0-9]+$/.test(r.charge||'')||r.currency!=='usd'||r.livemode===true)throw Error('Invalid test refund');
     if(!Number.isSafeInteger(event.created)||event.created<=0||event.created>nowSeconds+30||!['pending','requires_action','succeeded','failed','canceled'].includes(r.status))throw Error('Invalid refund evidence');
     if(event.type==='refund.failed'&&r.status!=='failed')throw Error('Conflicting refund evidence');
+    if(r.metadata?.integration==='rack_relic_test_refund'){uuid(r.metadata.request_id);uuid(r.metadata.order_id);}
     if(cents(r.amount,30000000)<1)throw Error('Invalid refund amount');
     return event;
   }
@@ -148,12 +149,14 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
 }
 // Shared Node/Edge routing. Activation follows the refund migration; defaults
 // preserve the already-deployed checkout receiver until staging is upgraded.
-function stripeTestEventRpc(event,raw,{refundsEnabled=false}={}){
+function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnabled=false}={}){
   const s=event.data.object;
   const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
   if(event.type.startsWith('refund.')){
     if(!refundsEnabled)throw Error('Test refund receiver not activated');
-    return {name:'rr_test_process_refund',payload:{...common,p_refund:s.id,p_payment_intent:s.payment_intent,p_charge:s.charge,p_amount:s.amount,p_currency:s.currency,p_status:s.status,p_created:event.created}};
+    const payload={...common,p_refund:s.id,p_payment_intent:s.payment_intent,p_charge:s.charge,p_amount:s.amount,p_currency:s.currency,p_status:s.status,p_created:event.created};
+    if(refundRequestsEnabled)payload.p_request=s.metadata?.integration==='rack_relic_test_refund'?s.metadata.request_id:null;
+    return {name:refundRequestsEnabled?'rr_test_process_refund_receipt':'rr_test_process_refund',payload};
   }
   const payload={...common,p_order:s.client_reference_id,p_session:s.id,p_amount:s.amount_total,p_currency:s.currency,p_paid:s.payment_status==='paid'&&s.status==='complete'};
   if(refundsEnabled)payload.p_payment_intent=s.payment_intent??null;

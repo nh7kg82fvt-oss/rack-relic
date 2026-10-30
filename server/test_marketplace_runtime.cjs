@@ -5,6 +5,9 @@ const {createTestQuoteService,createTestCheckoutService}=require('./test_checkou
 const {createStripeTestCheckoutClient}=require('./marketplace_test_checkout.cjs');
 const {createStripeTestTaxClient}=require('./stripe_test_tax.cjs');
 const {createTestCheckoutHandler,createTestOrdersHandler}=require('./test_order_handlers.cjs');
+const {createStripeTestRefundClient}=require('./stripe_test_refunds.cjs');
+const {createTestRefundService}=require('./test_refund_service.cjs');
+const {createTestRefundHandler}=require('./test_refund_handler.cjs');
 const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
 const LISTING='73737373-7373-4373-8373-737373737373';
@@ -27,7 +30,14 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   }
   if(!configured){send(503,{error:'Private test checkout unavailable'});return;}
   try{
-   const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members});
+   const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
+   const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
+   if(action==='refund'&&!refundReady){send(404,{error:'Not found'});return;}
+   const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='refund'){
+    const stripe=createStripeTestRefundClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
+    await createTestRefundHandler({refunds:createTestRefundService({repository,stripe}),enabled:true})(req,res);return;
+   }
    if(action==='orders'){await createTestOrdersHandler({repository,enabled:true})(req,res);return;}
    if(action!=='checkout'){send(404,{error:'Not found'});return;}
    const base=createStripeTestCheckoutClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl,returnOrigin:RETURN});
