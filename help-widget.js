@@ -28,10 +28,11 @@
     <button class="launcher" aria-expanded="false" aria-controls="help-panel" aria-label="Rack Relic help"><span class="wide-label">Questions? Get help</span><span class="narrow-label">Help</span></button>`;
   const topics = [
     ['Buying & launch','Rack Relic is in preview. Checkout, payments and payouts are not available yet. Illustrated demo items are not inventory for sale. A launch date has not been announced here.','Read preview help','/support'],
-    ['Selling & listing drafts','You can prepare a listing. A local draft stays on this device; saving it does not publish a listing, buy an item or reserve inventory.','Prepare a listing','/sell'],
+    ['Selling & listing drafts','Sign in to save a private account draft with up to six photos. Older local drafts stay on this device. Saving a draft does not publish it, buy an item or reserve inventory.','Prepare a listing','/sell'],
     ['Photos, sizing & condition','Use clear photos and accurate sizing and condition details. Our seller guide walks through preparing a listing before it goes live.','Open the seller guide','/seller-guide'],
     ['Sign-in help','Open your account to request a sign-in link. If a link is expired or invalid, request a new one. Never share your sign-in link or password.','Open account','/account'],
     ['Fees','When buying opens, the buyer platform fee will be 4% of the item price, with no fixed-dollar fee. Shipping and applicable tax are separate. Sellers bear actual payment-processing costs; the processor and rate are not yet confirmed.','Read fee details','/support'],
+    ['Safety, reports & suspicious messages','Get a checklist for a suspicious listing, unsafe message, account concern or privacy request. The helper prepares your next steps; it does not submit a report or make a refund decision.','Open safety & help','/safety'],
     ['Privacy & contacting us','For questions or privacy requests, email support@rackrelic.com. Selecting a topic here does not send a message, submit a report or start a return or refund request.','Privacy and tracking information','/tracking-privacy']
   ];
   const panel=root.querySelector('.panel'), launcher=root.querySelector('.launcher'), answer=root.querySelector('.answer');
