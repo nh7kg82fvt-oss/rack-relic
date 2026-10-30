@@ -13,10 +13,12 @@ function noCachedAuthority(response){
  if(['cf-cache-status','x-vercel-cache'].some(k=>/^(HIT|STALE|UPDATING)$/i.test(response.headers.get(k)||'')))throw new Unavailable();
  const age=response.headers.get('age');if(age!==null&&(!/^\d+$/.test(age)||Number(age)>0))throw new Unavailable();
 }
-function safeRow(row,id,member){
+function safeRow(row,id,member,index=0){
  if(!row||row.id!==id||!UUID.test(row.seller_id)||!['draft','published','sold','archived'].includes(row.status)||!['active','hidden'].includes(row.moderation_status))throw new Denied();
  if(member!==row.seller_id&&!(row.moderation_status==='active'&&['published','sold'].includes(row.status)))throw new Denied();
- const path=row.photo_path;
+ const paths=Array.isArray(row.photo_paths)&&row.photo_paths.length?row.photo_paths:[row.photo_path];
+ if(paths.length>6||paths[0]!==row.photo_path||new Set(paths).size!==paths.length)throw new Denied();
+ const path=paths[index];
  if(typeof path!=='string'||!path.startsWith(row.seller_id+'/'+id+'/'))throw new Denied();
  const file=path.slice((row.seller_id+'/'+id+'/').length);
  if(!/^[A-Za-z0-9][A-Za-z0-9._-]{0,220}\.(jpg|jpeg|png|webp)$/.test(file))throw new Denied();
@@ -45,9 +47,9 @@ function createListingPhotoHandler({projectUrl,publicKey,readObject,fetchImpl=gl
   const control=new AbortController();let timer;
   const work=async()=>{
    if(typeof req.url!=='string')throw new Denied();
-   const match=/^\/api\/listing-photo\/([0-9a-f-]+)$/.exec(req.url);if(!match||!UUID.test(match[1]))throw new Denied();
+   const match=/^\/api\/listing-photo\/([0-9a-f-]+)(?:\/([0-5]))?$/.exec(req.url);if(!match||!UUID.test(match[1]))throw new Denied();
    if(header(req,'range')!==null)throw new Denied();
-   const id=match[1],authorization=header(req,'authorization');let member=null;
+   const id=match[1],index=Number(match[2]||0),authorization=header(req,'authorization');let member=null;
    const headers={apikey:publicKey,'Cache-Control':'no-store','Accept':'application/json'};
    if(authorization!==null){
     if(!/^Bearer [^\s]{1,8192}$/i.test(authorization))throw new Denied();
@@ -58,10 +60,10 @@ function createListingPhotoHandler({projectUrl,publicKey,readObject,fetchImpl=gl
    }
    const current=async()=>{
     if(control.signal.aborted)throw new Unavailable();
-    const url=new URL(projectUrl+'/rest/v1/listings');url.searchParams.set('select','id,seller_id,status,moderation_status,photo_path');url.searchParams.set('id','eq.'+id);url.searchParams.set('limit','1');
+    const url=new URL(projectUrl+'/rest/v1/listings');url.searchParams.set('select','id,seller_id,status,moderation_status,photo_path,photo_paths');url.searchParams.set('id','eq.'+id);url.searchParams.set('limit','1');
     const result=await fetchImpl(url.toString(),{method:'GET',headers,cache:'no-store',redirect:'error',signal:control.signal});
     noCachedAuthority(result);if(result.status!==200)throw new Unavailable();
-    const rows=await result.json();if(!Array.isArray(rows)||rows.length!==1)throw new Denied();return safeRow(rows[0],id,member);
+    const rows=await result.json();if(!Array.isArray(rows)||rows.length!==1)throw new Denied();return safeRow(rows[0],id,member,index);
    };
    const first=await current();if(control.signal.aborted)throw new Unavailable();
    // Adapter must be approved server-only origin access, never a caller URL.
@@ -78,3 +80,4 @@ function createListingPhotoHandler({projectUrl,publicKey,readObject,fetchImpl=gl
  };
 }
 module.exports={createListingPhotoHandler};
+
