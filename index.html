@@ -175,8 +175,12 @@ async function attachPhoto(box,listing,alt,index=0,single=false){
 }
 const signedOut=byId('signed-out'), signedIn=byId('signed-in');
 function message(error){if(error?.status===429)return 'Please wait a minute before trying again.';return 'That could not be completed. Check your connection and try again.'}
+let accountLoading=false;
 async function loadAccount(session){
- const nextUser=session?.user||null;if(user?.id===nextUser?.id&&profile)return;window.RackAccountDrafts?.invalidate();
+ const nextUser=session?.user||null;
+ if(user?.id===nextUser?.id&&(profileReady||accountLoading))return;
+ if(user?.id!==nextUser?.id)window.RackAccountDrafts?.invalidate();
+ accountLoading=!!nextUser;
  const turn=++generation;user=nextUser;profile=null;profileReady=false;profileSaving=false;profileControls(true);profileRetry.hidden=true;byId('account-email').textContent='';
  byId('header-account-link').textContent=user?'Your account':'Sign in';
  byId('seller-save-intro').textContent=user?'Save up to six photos and your item details together in a private account draft. You can review everything before publishing.':'Sign in to save up to six photos and your item details in a private account draft. Older device-only drafts remain below.';
@@ -192,6 +196,7 @@ async function loadAccount(session){
  byId('profile-name').value=profile?.display_name||'';byId('profile-bio').value=profile?.bio||'';
  notice(profile?'You are signed in. Your profile is saved.':'You are signed in. Choose your public seller name to get started.');await loadDrafts(turn);await loadInbox();await loadSavedFinds();await loadBlockedMembers();await loadReports();
  }catch(error){if(turn===generation){if(!profileReady){profileRetry.hidden=false;notice('Your seller profile could not load. Retry before editing; your saved profile has not been changed.')}else notice(message(error))}}
+ finally{if(turn===generation)accountLoading=false}
 }
 const listingStates={draft:'Private draft',published:'Published',sold:'Sold',archived:'Archived'};
 function listingActions(d){
