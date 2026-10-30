@@ -64,13 +64,14 @@ function validateSession(data,snapshot,expectedId){
     state:data.status==='complete'?(data.payment_status==='paid'?'paid':'payment_pending'):data.status,
     expiresAt:data.expires_at*1000});
 }
-function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch}={}){
+function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,returnOrigin='http://localhost:3000'}={}){
+  if(!['http://localhost:3000','https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app'].includes(returnOrigin))throw Error('Protected test return origin required');
   if(typeof secretKey!=='string'||!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(secretKey))throw Error('Stripe test secret key required');
   if(typeof fetchImpl!=='function')throw Error('Test transport required');
   return Object.freeze({
     async createCheckout(input){
       const snapshot=buildTestCheckout(input);
-      const form=new URLSearchParams({mode:'payment',integration_identifier:INTEGRATION_IDENTIFIER,'adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:'http://localhost:3000/test-checkout/success?session_id={CHECKOUT_SESSION_ID}',cancel_url:'http://localhost:3000/test-checkout/cancel',client_reference_id:snapshot.orderId,
+      const form=new URLSearchParams({mode:'payment',integration_identifier:INTEGRATION_IDENTIFIER,'adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:returnOrigin+'/api/test-marketplace?view=return&session_id={CHECKOUT_SESSION_ID}',cancel_url:returnOrigin+'/api/test-marketplace?view=cancel',client_reference_id:snapshot.orderId,
         'metadata[order_id]':snapshot.orderId,'metadata[integration]':'rack_relic_test',
         'payment_intent_data[metadata][order_id]':snapshot.orderId,'payment_intent_data[transfer_group]':'rr_test_'+snapshot.orderId});
       let index=0;

@@ -5,7 +5,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const project=url.hostname.split('.')[0];
  if(!/^[a-z0-9]{20}$/.test(project)||url.hostname!==project+'.supabase.co'||project===PRODUCTION_PROJECT||url.protocol!=='https:'||url.port||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -24,7 +24,7 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  async function member(authorization){
   if(typeof authorization!=='string'||!/^Bearer [^\s]{1,8192}$/.test(authorization))throw new OrderAccessDenied('Sign in required');
   const user=await request('/auth/v1/user',undefined,authorization);
-  if(!UUID.test(user?.id||''))throw new OrderAccessDenied('Sign in required');return user.id;
+  if(!UUID.test(user?.id||'')||allowedMemberIds&&!allowedMemberIds.includes(user.id))throw new OrderAccessDenied('Sign in required');return user.id;
  }
  const id=v=>{if(!UUID.test(v||''))throw new OrderAccessDenied('Invalid order identifier');return v;};
  const rpc=(name,args)=>request('/rest/v1/rpc/'+name,args);
@@ -38,6 +38,26 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    id(orderId);
    if(snapshot?.test!==true||snapshot.orderId!==orderId)throw new OrderAccessDenied('Invalid test snapshot');
    return rpc('rr_test_attach_checkout',{p_order:orderId,p_session:sessionId,p_snapshot:snapshot,p_tax_calculation:taxCalculationId,p_destination_hash:destinationHash,p_shipping_rate:shippingRateId,p_expires:expiresAt});
+  },
+  async checkoutAttempt({authorization,orderId}){
+   id(orderId);const buyer=await member(authorization);
+   return rpc('rr_test_checkout_attempt',{p_order:orderId,p_buyer:buyer});
+  },
+  async prepareCheckout({authorization,orderId,input,snapshot,expiresAt}){
+   id(orderId);const buyer=await member(authorization);
+   return rpc('rr_test_prepare_checkout',{p_order:orderId,p_buyer:buyer,p_input:input,p_snapshot:snapshot,p_expires:new Date(expiresAt).toISOString()});
+  },
+  async dispatchCheckout({authorization,orderId}){
+   id(orderId);const buyer=await member(authorization);
+   return rpc('rr_test_dispatch_checkout',{p_order:orderId,p_buyer:buyer});
+  },
+  async saveCheckoutSession({authorization,orderId,sessionId,expiresAt}){
+   id(orderId);const buyer=await member(authorization);
+   return rpc('rr_test_save_checkout_session',{p_order:orderId,p_buyer:buyer,p_session:sessionId,p_expires:new Date(expiresAt).toISOString()});
+  },
+  async finishCheckout({authorization,orderId}){
+   id(orderId);const buyer=await member(authorization);
+   return rpc('rr_test_finish_checkout',{p_order:orderId,p_buyer:buyer});
   },
   async memberOrders({authorization}){
    const user=await member(authorization);const rows=await rpc('rr_test_member_orders',{p_member:user});
