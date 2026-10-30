@@ -11,6 +11,7 @@
       :host{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:900;font:16px/1.5 system-ui,-apple-system,sans-serif;color:#20201f}
       *{box-sizing:border-box}button,a{font:inherit}button{cursor:pointer}
       button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:3px solid #79559c;outline-offset:3px}
+      .narrow-label{display:none}@media(max-width:600px){.wide-label{display:none}.narrow-label{display:inline}.launcher{padding:10px 14px!important}}
       .launcher{border:1px solid #20201f;border-radius:30px;padding:12px 19px;background:#e5d7fa;color:#20201f;box-shadow:0 4px 18px #0002}
       .panel{width:min(370px,calc(100vw - 32px));max-height:min(620px,calc(100dvh - 110px));overflow:auto;background:#faf9f6;border:1px solid #c6b4df;border-radius:18px;box-shadow:0 8px 35px #0003;padding:20px;margin-bottom:12px}
       [hidden]{display:none!important}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}h2{font-size:20px;margin:0}.close{background:transparent;border:0;border-radius:8px;min-width:44px;min-height:44px;font-size:26px}
@@ -24,7 +25,7 @@
       <div class="answer" role="status" aria-live="polite" aria-atomic="true"></div>
       <p class="contact">Still need help? <a href="mailto:support@rackrelic.com">Email support@rackrelic.com</a>. Do not send passwords, payment-card details or identity documents.</p>
     </section>
-    <button class="launcher" aria-expanded="false" aria-controls="help-panel">Questions? Get help</button>`;
+    <button class="launcher" aria-expanded="false" aria-controls="help-panel" aria-label="Rack Relic help"><span class="wide-label">Questions? Get help</span><span class="narrow-label">Help</span></button>`;
   const topics = [
     ['Buying & launch','Rack Relic is in preview. Checkout, payments and payouts are not available yet. Illustrated demo items are not inventory for sale. A launch date has not been announced here.','Read preview help','/support'],
     ['Selling & listing drafts','You can prepare a listing. A local draft stays on this device; saving it does not publish a listing, buy an item or reserve inventory.','Prepare a listing','/sell'],
