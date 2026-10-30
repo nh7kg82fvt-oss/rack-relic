@@ -192,7 +192,7 @@ function deliveryPatch(values){
  return {delivery_mode:mode,shipping_fee_cents:cents,dispatch_days:days,pickup_area:area};
 }
 function deliverySummary(d){
- const parts=[];if(['shipping','both'].includes(d.delivery_mode))parts.push('US shipping: '+usd(d.shipping_fee_cents)+' · dispatch within '+d.dispatch_days+' business day'+(d.dispatch_days===1?'':'s'));
+ const parts=[];if(['shipping','both'].includes(d.delivery_mode))parts.push('Seller shipping estimate: '+usd(d.shipping_fee_cents)+' · dispatch within '+d.dispatch_days+' business day'+(d.dispatch_days===1?'':'s'));
  if(['pickup','both'].includes(d.delivery_mode))parts.push('Local pickup: '+d.pickup_area+' · no delivery charge');
  return parts.length?parts.join(' | '):'Delivery is not configured yet.';
 }
@@ -222,7 +222,7 @@ function renderCheckoutPreview(d,body){
  const method=select.value;try{const {data,error}=await client.rpc('checkout_preview',{target_listing:d.id,requested_method:method});if(turn!==request||!panel.isConnected)return;
  if(error)throw error;if(!Array.isArray(data)||data.length>1)throw Error('Invalid estimate');const quote=data[0];if(!quote){result.replaceChildren(el('p','This item or delivery option is no longer available. Reopen the listing for current details.'));return}
  if(quote.listing_id!==d.id||quote.currency!=='USD'||quote.method!==method||![quote.item_cents,quote.delivery_cents,quote.subtotal_cents].every(Number.isSafeInteger)||quote.item_cents<100||quote.item_cents>10000000||quote.delivery_cents<0||quote.delivery_cents>100000||quote.subtotal_cents!==quote.item_cents+quote.delivery_cents||(method==='pickup'&&(quote.delivery_cents!==0||typeof quote.pickup_area!=='string'||quote.pickup_area.trim().length<2||quote.pickup_area.length>80))||(method==='shipping'&&(!Number.isInteger(quote.dispatch_days)||quote.dispatch_days<1||quote.dispatch_days>14)))throw Error('Invalid estimate');
- result.replaceChildren(el('p','Item: '+usd(quote.item_cents)),el('p',(quote.method==='shipping'?'Shipping: ':'Pickup: ')+usd(quote.delivery_cents)),el('strong','Subtotal before tax: '+usd(quote.subtotal_cents)),el('p','Tax has not been calculated. This is not a final charge, order or reservation.','muted'));
+ result.replaceChildren(el('p','Item: '+usd(quote.item_cents)),el('p',(quote.method==='shipping'?'Shipping: ':'Pickup: ')+usd(quote.delivery_cents)),el('strong','Item + delivery estimate: '+usd(quote.subtotal_cents)),el('p','The planned 4% buyer fee and applicable tax are not included. Shipping here is the seller’s preview amount, not a live carrier quote. This is not a final charge, order or reservation.','muted'));
  result.append(el('p',quote.method==='shipping'?'Seller dispatches within '+quote.dispatch_days+' business day'+(quote.dispatch_days===1?'':'s')+'. Arrival time is not yet available.':'Pickup area: '+quote.pickup_area+'. Exact arrangements are not collected in this preview.'));
  }catch(error){if(turn===request&&panel.isConnected)result.replaceChildren(el('p','Could not load an estimate. Use Refresh estimate to retry.'))}finally{if(turn===request)refresh.disabled=false}};
  select.onchange=update;refresh.onclick=update;update();
