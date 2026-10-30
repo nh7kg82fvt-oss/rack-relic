@@ -25,6 +25,7 @@ test('test checkout uses one fixed provider, minimal metadata and a stable order
  assert.equal(calls[0].opts.headers['Idempotency-Key'],calls[1].opts.headers['Idempotency-Key']);
  assert.equal(calls[0].opts.redirect,'error');
  const form=new URLSearchParams(calls[0].opts.body);assert.equal(form.get('line_items[1][price_data][unit_amount]'),'100');
+ assert.equal(form.get('billing_address_collection'),'required');assert.equal(form.get('payment_method_options[card][request_three_d_secure]'),'any');
  assert.equal(form.get('payment_intent_data[transfer_group]'),'rr_test_'+orderId);
  assert.equal(form.get('payment_intent_data[transfer_data][destination]'),null);
  assert.equal(form.get('customer_email'),null);assert.equal(form.get('automatic_tax[enabled]'),null);

@@ -8,7 +8,7 @@ Start with a **Stripe Connect sandbox**, Stripe-hosted Checkout and hosted selle
 
 No live account activation is required to develop against a sandbox. A Stripe login, sandbox access, Connect configuration and sandbox keys are still needed. Stripe's sandbox capabilities can be less restrictive than live capabilities: passing tests does not establish launch eligibility. Wayne subsequently authorized proceeding with sandbox setup. Stripe is now connected to **Rack Relic sandbox** (`livemode: false`). The initial module tests used mocked responses; a subsequent isolated provider API smoke test created one unpaid test Checkout Session. See the verified results below.
 
-This branch adds server-only test checkout construction, raw-body webhook verification and a Stripe Tax adapter, exercised with mocked HTTP responses. It adds **no public route**, transfers, refunds, live account creation, database migrations, checkout UI, secrets or environment changes. Sandbox Tax settings were subsequently configured through the connected account as described below. The existing public Buy button and manifest remain closed. No production deployment or database state was inspected or changed by this review.
+This branch adds server-only test checkout, signed webhook handling, a Tax adapter, a private test order repository, an isolated PostgreSQL ledger migration and fraud-hold logic. Provider HTTP paths use mocked transports in tests, while the order SQL executes under PGlite PostgreSQL. It adds **no public route**, transfer/refund executor, live account creation, production migration, checkout UI or runtime secrets. The new test migration has not been applied remotely. Sandbox Tax settings were subsequently configured through the connected account as described below. The existing public Buy button and manifest remain closed. No production deployment or database state was inspected or changed by this review.
 
 ## What main actually contains
 
@@ -125,6 +125,18 @@ After the owner's explicit approval, the Washington **sandbox-only** state sales
 Remaining access and implementation dependencies: Supabase and Vercel are available integrations but are not connected to this session. The full Supabase schema, an isolated test database, hosting configuration and secure sandbox runtime credentials are still needed to implement and deploy the durable order ledger, inventory reservations, webhook processing, shipping jobs, transfers/refunds, notifications and customer order screens. These are outstanding, not completed by the tax adapter. No live payments or paid services were enabled.
 
 See [Stripe Tax sandbox testing](https://docs.stripe.com/tax/testing) and [Tax settings API](https://docs.stripe.com/tax/settings-api).
+
+## Order ledger and stolen-card controls added in the draft branch
+
+The owner requested continued implementation and protection against stolen/fraudulent cards. The branch now includes an isolated PostgreSQL order ledger, service-role-only repository and handler factories, plus a conservative test fraud gate. No public route or cloud database migration was activated.
+
+The ledger reserves one synthetic item per buyer/order, locks price and visibility, binds immutable checkout amounts, deduplicates signed payment events atomically, keeps seller/tax/postage liabilities separate, handles conflicting late payments through a suspense/review state, and queues jobs without executing them. Paid orders start with label and seller-sale-notice jobs held pending fresh fraud assessment. A held/blocked order cannot be silently auto-cleared later.
+
+The test Checkout request collects billing address and requests 3DS. The risk evaluator checks matching, fresh provider Charge evidence, CVC/street/postal checks, 3DS outcome, Radar outcome, open reviews, refunds/disputes and address-change signals. Missing or failed evidence leads to review; explicit fraud/highest-risk outcomes block fulfillment. This is a test policy and does not establish that a cardholder is legitimate or that disputes are impossible. No paid Radar product or live rule was enabled.
+
+**158 automated tests pass.** The added tests execute PostgreSQL functions through PGlite and exercise signed raw webhooks through the HTTP repository into those SQL transactions. They also verify role restrictions, member isolation, duplicate-event accounting, late-payment handling, fraud holds and production-project rejection. Multi-worker cloud load tests, real Supabase Auth tests and end-to-end deployed purchases remain outstanding.
+
+See [test order backend handoff](test-order-backend.md) for schema/runtime details and deployment dependencies, and [card fraud controls](card-fraud-controls.md) for the staged policy and remaining protections. Supabase/Vercel access, actual runtime credentials, catalog/UI integration, fulfillment/notification workers, tax recording/reversals, seller transfers/payouts/refunds, operator reviews, abuse limits and live launch verification are still required. The draft is not a completed or deployed marketplace.
 
 ## Official sources
 

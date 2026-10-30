@@ -44,7 +44,7 @@ function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch}={
   return Object.freeze({
     async createCheckout(input){
       const snapshot=buildTestCheckout(input);
-      const form=new URLSearchParams({mode:'payment',success_url:'http://localhost:3000/test-checkout/success?session_id={CHECKOUT_SESSION_ID}',cancel_url:'http://localhost:3000/test-checkout/cancel',client_reference_id:snapshot.orderId,
+      const form=new URLSearchParams({mode:'payment',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:'http://localhost:3000/test-checkout/success?session_id={CHECKOUT_SESSION_ID}',cancel_url:'http://localhost:3000/test-checkout/cancel',client_reference_id:snapshot.orderId,
         'payment_method_types[0]':'card','metadata[order_id]':snapshot.orderId,'metadata[integration]':'rack_relic_test',
         'payment_intent_data[metadata][order_id]':snapshot.orderId,'payment_intent_data[transfer_group]':'rr_test_'+snapshot.orderId});
       let index=0;
