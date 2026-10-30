@@ -104,3 +104,13 @@ test('sign-out clears displayed photos and prevents late private bytes rendering
 test('gallery takeover prevents a stale photo overwriting the current view',async()=>{
  const f=frontend(),p=f.context.attachPhoto(f.box,row(),'test');f.box.dataset.galleryActive='true';f.respond();await p;assert.equal(f.box.nodes.some(n=>n.tag==='img'),false);
 });
+
+const second=OWNER+'/'+ID+'/detail.png';
+const galleryRow=(status='published')=>row(status,{photo_paths:[OWNER+'/'+ID+'/test.png',second]});
+test('second gallery image resolves only through listing authority',async()=>{const f=fixture({row:galleryRow()});assert.equal((await run(f,{url:'/api/listing-photo?id='+ID+'&index=1'})).status,200);assert.ok(f.calls.find(c=>c.url.includes('/storage/')).url.endsWith('/detail.png'))});
+test('private extra photo is denied to buyer and anonymous',async()=>{for(const headers of [{},{authorization:'Bearer buyer'}]){const f=fixture({row:galleryRow('draft'),actor:BUYER});assert.equal((await run(f,{url:'/api/listing-photo?id='+ID+'&index=1',headers})).status,404);assert.equal(f.calls.some(c=>c.url.includes('/storage/')),false)}});
+test('owner can read second private photo',async()=>{assert.equal((await run(fixture({row:galleryRow('draft')}),{url:'/api/listing-photo?id='+ID+'&index=1',headers:{authorization:'Bearer owner'}})).status,200)});
+test('removed extra photo cannot escape during delivery',async()=>{assert.equal((await run(fixture({rows:[[galleryRow()],[row()]]}),{url:'/api/listing-photo?id='+ID+'&index=1'})).status,404)});
+test('cross-listing extra photo is denied',async()=>{const r=galleryRow();r.photo_paths[1]=OWNER+'/'+BUYER+'/detail.png';assert.equal((await run(fixture({row:r}),{url:'/api/listing-photo?id='+ID+'&index=1'})).status,404)});
+test('invalid gallery indices and duplicate parameters never read storage',async()=>{for(const suffix of ['&index=-1','&index=6','&index=01','&index=1&index=2','&index=x']){const f=fixture({row:galleryRow()});assert.equal((await run(f,{url:'/api/listing-photo?id='+ID+suffix})).status,404);assert.equal(f.calls.length,0)}});
+test('out-of-range photo and inconsistent cover are denied',async()=>{assert.equal((await run(fixture(),{url:'/api/listing-photo?id='+ID+'&index=1'})).status,404);const r=galleryRow();r.photo_paths[0]=second;assert.equal((await run(fixture({row:r}))).status,404)});
