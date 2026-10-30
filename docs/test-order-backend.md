@@ -4,7 +4,7 @@ This branch connects a private test checkout page to the separate staging databa
 
 ## What is implemented
 
-The private page signs in through staging Supabase Auth, reserves a synthetic $25 jacket, adds the 4% buyer fee, obtains a Stripe test tax calculation, and opens hosted Stripe Checkout. Shipping is explicitly a **$5 simulation**. No carrier quote, postage purchase or seller payout occurs. Buyer and seller views read their own orders from the server. Returning from Stripe is never treated as proof of payment.
+The private page signs in through staging Supabase Auth using a password or a one-time email link, reserves a synthetic $25 jacket, adds the 4% buyer fee, obtains a Stripe test tax calculation, and opens hosted Stripe Checkout. Shipping is explicitly a **$5 simulation**. No carrier quote, postage purchase or seller payout occurs. Buyer and seller views read their own orders from the server. Returning from Stripe is never treated as proof of payment.
 
 The server derives price and identity from the authenticated reservation. It persists immutable quote evidence before creating Checkout, atomically claims one creation attempt, saves the session ID before attachment, and recovers known sessions with GET only. An uncertain creation with no saved session remains held for reconciliation; a retry cannot blindly create another payment. Competing requests with different destinations cannot silently use each other's quote.
 
@@ -53,3 +53,7 @@ Still outstanding: real carrier quote/label/tracking integration, tax transactio
 ## Launch preparation
 
 The owner deferred paid Vercel/Supabase upgrades until immediately before launch. Do not buy plans or enable paid overages during routine testing. Recheck pricing and staging organization placement then. Before launch configure usage/billing alerts, independent monitoring, database and photo backups with a restore test, and load/payment acceptance checks. The deployed site must operate without an active Mac or Codex chat. Keep customer checkout closed until full purchase, failure, fulfillment and refund flows pass and live launch receives separate approval.
+
+## Test account recovery
+
+The private page offers email sign-in without changing the existing test account or password. The browser requests `/auth/v1/otp` with `create_user=false`, an S256 PKCE challenge and the exact private preview callback. Only the initiating Chrome profile retains the short-lived verifier; callback exchange verifies the returned email and the server still enforces the staging member allowlist. Auth codes are removed from the address bar before further requests. Secrets and tokens are not logged. Open the email link in the same profile used to request it. Requests have a timeout and clear delivery/expiry errors. Staging uses Supabase default mail delivery, whose recipient restrictions must be verified before claiming successful email delivery. No custom SMTP or paid service was added. See [Supabase email sign-in](https://supabase.com/docs/guides/auth/auth-email-passwordless).
