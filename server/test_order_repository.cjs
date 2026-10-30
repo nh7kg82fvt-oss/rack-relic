@@ -34,6 +34,9 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   if(!allowedRefundOperatorIds.includes(actor))throw new OrderAccessDenied('Refund operator access required');return actor;
  }
  return Object.freeze({
+  async refundAccess({authorization}){
+   await refundOperator(authorization);return {test:true,allowed:true};
+  },
   async prepareRefund({authorization,requestId,orderId,amountCents}){
    id(requestId);id(orderId);
    if(!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>30000000)throw new OrderAccessDenied('Invalid refund amount');

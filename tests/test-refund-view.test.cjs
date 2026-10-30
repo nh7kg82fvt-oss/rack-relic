@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 async function render(order){
  const el=()=>({children:[],textContent:'',addEventListener(){},append(...nodes){this.children.push(...nodes);},replaceChildren(){this.children=[];}});
  const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,el());return nodes.get(id);};
- const context={document:{getElementById:get,createElement:el},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:{getItem:()=>JSON.stringify({token:'fixture',member:'buyer'}),removeItem(){}},localStorage:{},createTestEmailSignin:()=>({}),URLSearchParams,Intl,fetch:async url=>({ok:true,json:async()=>url.endsWith('config')?{notice:'fixture',publishableKey:'fixture'}:{orders:[{id:'fixture',buyer_id:'buyer',state:'paid',total_cents:3427,...order}]}})};
+ const context={document:{getElementById:get,createElement:el},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:{getItem:()=>JSON.stringify({token:'fixture',member:'buyer'}),removeItem(){}},localStorage:{},createTestEmailSignin:()=>({}),URLSearchParams,Intl,AbortSignal,fetch:async url=>({ok:true,json:async()=>url.endsWith('config')?{notice:'fixture',publishableKey:'fixture'}:{orders:[{id:'fixture',buyer_id:'buyer',state:'paid',total_cents:3427,...order}]}})};
  vm.runInNewContext(fs.readFileSync(require.resolve('../test-marketplace.js'),'utf8'),context);
  await new Promise(resolve=>setImmediate(resolve));
  return get('orders').children[0].children.map(n=>n.textContent).join('\n');

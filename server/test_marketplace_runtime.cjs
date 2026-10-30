@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');
-const {createTestOrderRepository}=require('./test_order_repository.cjs');
+const {createTestOrderRepository,OrderAccessDenied}=require('./test_order_repository.cjs');
 const {createTestQuoteService,createTestCheckoutService}=require('./test_checkout_service.cjs');
 const {createStripeTestCheckoutClient}=require('./marketplace_test_checkout.cjs');
 const {createStripeTestTaxClient}=require('./stripe_test_tax.cjs');
@@ -32,8 +32,16 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(action==='refund'&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='refund-access'){
+    if(req.method!=='GET'){res.setHeader('Allow','GET');send(405,{error:'Method not allowed'});return;}
+    const query=new URL(req.url,'https://example.invalid').searchParams;
+    if([...query.keys()].some(k=>k!=='action')||query.getAll('action').length!==1){send(400,{error:'Invalid access check'});return;}
+    try{send(200,await repository.refundAccess({authorization:req.headers?.authorization}));}
+    catch(e){send(e instanceof OrderAccessDenied?403:503,{error:e instanceof OrderAccessDenied?'Refund operator access required':'Test refund access unavailable'});}
+    return;
+   }
    if(action==='refund'){
     const stripe=createStripeTestRefundClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
     await createTestRefundHandler({refunds:createTestRefundService({repository,stripe}),enabled:true})(req,res);return;
