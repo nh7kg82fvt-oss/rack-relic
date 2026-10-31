@@ -37,6 +37,14 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   async refundAccess({authorization}){
    await refundOperator(authorization);return {test:true,allowed:true};
   },
+  async refundReview({authorization}){
+   const actor=await refundOperator(authorization),rows=await rpc('rr_test_refund_review',{p_actor:actor});
+   const phases=['prepared','dispatched','known'],statuses=['pending','requires_action','succeeded','failed','canceled'];
+   if(!Array.isArray(rows)||rows.length>101||rows.some(q=>q?.actor_id!==actor||q.participant!==true||!UUID.test(q.id||'')||!UUID.test(q.order_id||'')||!Number.isSafeInteger(q.amount_cents)||q.amount_cents<1||q.amount_cents>30000000||!phases.includes(q.phase)||q.receipt_status!==null&&!statuses.includes(q.receipt_status)||typeof q.needs_review!=='boolean'||typeof q.created_at!=='string'||!Number.isFinite(Date.parse(q.created_at))||typeof q.updated_at!=='string'||!Number.isFinite(Date.parse(q.updated_at))))throw new OrderServiceUnavailable('Invalid refund review evidence');
+   return {test:true,hasMore:rows.length>100,requests:rows.slice(0,100).map(q=>({requestId:q.id,orderId:q.order_id,amountCents:q.amount_cents,
+    reviewState:q.needs_review?'needs_review':q.phase==='prepared'?'not_dispatched':q.phase==='dispatched'?'outcome_unknown':q.receipt_status===null?'awaiting_notice':q.receipt_status==='succeeded'?'confirmed':['failed','canceled'].includes(q.receipt_status)?'failed':'processing',
+    createdAt:q.created_at,updatedAt:q.updated_at}))};
+  },
   async prepareRefund({authorization,requestId,orderId,amountCents}){
    id(requestId);id(orderId);
    if(!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>30000000)throw new OrderAccessDenied('Invalid refund amount');
@@ -60,6 +68,12 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    id(orderId);id(listingId);const buyer=await member(authorization);
    return rpc('rr_test_reserve',{p_order:orderId,p_listing:listingId,p_buyer:buyer});
   },
+  async cancelPreparation({authorization,orderId}){
+   id(orderId);const buyer=await member(authorization);
+   const result=await rpc('rr_test_cancel_preparation',{p_order:orderId,p_buyer:buyer});
+   if(result?.test!==true||result.orderId!==orderId||result.state!=='cancelled')throw new OrderServiceUnavailable('Invalid cancellation result');
+   return {test:true,orderId,state:'cancelled'};
+  },
   // Server orchestration only: never publish this as a browser-supplied RPC.
   async attachCheckout({orderId,sessionId,snapshot,taxCalculationId,destinationHash,shippingRateId,expiresAt}){
    id(orderId);
@@ -69,6 +83,13 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   async checkoutAttempt({authorization,orderId}){
    id(orderId);const buyer=await member(authorization);
    return rpc('rr_test_checkout_attempt',{p_order:orderId,p_buyer:buyer});
+  },
+  async quotePermit({authorization,orderId}){
+   id(orderId);const buyer=await member(authorization);
+   const permit=await rpc('rr_test_quote_permit',{p_order:orderId,p_buyer:buyer});
+   if(permit?.test!==true||typeof permit.allowed!=='boolean'||!Number.isSafeInteger(permit.retryAfter)||
+    (permit.allowed?permit.retryAfter!==0:permit.retryAfter<1||permit.retryAfter>86400))throw new OrderServiceUnavailable('Invalid quote limit response');
+   return {test:true,allowed:permit.allowed,retryAfter:permit.retryAfter};
   },
   async prepareCheckout({authorization,orderId,input,snapshot,expiresAt}){
    id(orderId);const buyer=await member(authorization);
@@ -90,7 +111,8 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    const user=await member(authorization);const rows=await rpc('rr_test_member_orders',{p_member:user});
    if(!Array.isArray(rows)||rows.length>100)throw new OrderServiceUnavailable('Invalid order list');
    if(rows.some(row=>!UUID.test(row?.id||'')||(row.buyer_id!==user&&row.seller_id!==user)))throw new OrderServiceUnavailable('Order ownership mismatch');
-   const fields=['id','listing_id','buyer_id','seller_id','state','risk_status','item_cents','buyer_fee_cents','shipping_cents','tax_cents','total_cents','refund_state','refunded_cents','refund_pending_cents','created_at','updated_at'];
+   if(rows.some(row=>Object.hasOwn(row,'can_cancel_preparation')&&typeof row.can_cancel_preparation!=='boolean'))throw new OrderServiceUnavailable('Invalid preparation status');
+   const fields=['id','listing_id','buyer_id','seller_id','state','risk_status','item_cents','buyer_fee_cents','shipping_cents','tax_cents','total_cents','refund_state','refunded_cents','refund_pending_cents','can_cancel_preparation','created_at','updated_at'];
    return rows.map(row=>Object.fromEntries(fields.filter(k=>Object.hasOwn(row,k)).map(k=>[k,row[k]])));
   },
   async acceptStripeEvent({rawBody,signature,webhookSecret,nowSeconds}){

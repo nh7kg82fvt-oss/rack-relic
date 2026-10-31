@@ -1,5 +1,5 @@
 'use strict';
-const {CheckoutPending}=require('./test_checkout_service.cjs');
+const {CheckoutPending,CheckoutRateLimited}=require('./test_checkout_service.cjs');
 const {OrderAccessDenied,OrderServiceUnavailable}=require('./test_order_repository.cjs');
 const HEADERS={'Cache-Control':'private, no-store, max-age=0','CDN-Cache-Control':'no-store','Vercel-CDN-Cache-Control':'no-store','Content-Type':'application/json; charset=utf-8','X-Content-Type-Options':'nosniff'};
 function send(res,status,data){for(const [k,v] of Object.entries(HEADERS))res.setHeader(k,v);res.statusCode=status;res.end(JSON.stringify(data));}
@@ -40,9 +40,24 @@ function createTestCheckoutHandler({checkout,enabled=false}={}){
    const result=await checkout.start({authorization:req.headers?.authorization,orderId:body.orderId,listingId:body.listingId,to:body.to});
    send(res,200,result);
   }catch(e){
+   if(e instanceof CheckoutRateLimited){res.setHeader('Retry-After',String(e.retryAfter));send(res,429,{error:'Too many test checkout attempts. Please wait before trying this saved order again.'});return;}
    const status=e instanceof OrderAccessDenied?401:e instanceof CheckoutPending?409:503;
    send(res,status,{error:status===401?'Sign in required':status===409?'Checkout pending; do not start another order':'Test checkout unavailable; check this order before retrying'});
   }
  };
 }
-module.exports={createTestWebhookHandler,createTestOrdersHandler,createTestCheckoutHandler};
+function createTestCancelPreparationHandler({repository,enabled=false}={}){
+ return async(req,res)=>{
+  if(enabled!==true||!repository){send(res,404,{error:'Not found'});return;}
+  if(req.method!=='POST'){res.setHeader('Allow','POST');send(res,405,{error:'Method not allowed'});return;}
+  if((req.headers?.['content-type']||'').split(';')[0].trim()!=='application/json'){send(res,415,{error:'JSON required'});return;}
+  try{
+   let length=0;const chunks=[];
+   for await(const chunk of req){const bytes=Buffer.from(chunk);length+=bytes.length;if(length>2048){send(res,413,{error:'Request too large'});return;}chunks.push(bytes);}
+   let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(res,400,{error:'Invalid preparation request'});return;}
+   if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!Object.hasOwn(body,'orderId')){send(res,400,{error:'An existing order reference is required'});return;}
+   send(res,200,await repository.cancelPreparation({authorization:req.headers?.authorization,orderId:body.orderId}));
+  }catch(e){send(res,e instanceof OrderAccessDenied?401:409,{error:e instanceof OrderAccessDenied?'Sign in required':'This preparation could not be cancelled. Keep the saved reference and refresh orders before trying again.'});}
+ };
+}
+module.exports={createTestWebhookHandler,createTestOrdersHandler,createTestCheckoutHandler,createTestCancelPreparationHandler};

@@ -2,6 +2,9 @@
 const {buildTestCheckout}=require('./marketplace_test_checkout.cjs');
 const {usAddress,destinationHash}=require('./stripe_test_tax.cjs');
 class CheckoutPending extends Error{}
+class CheckoutRateLimited extends Error{
+ constructor(retryAfter){super('Too many checkout attempts');this.retryAfter=retryAfter;}
+}
 // Only a trusted server loader may supply a synthetic seller's return address,
 // packed dimensions, listing version and explicit tax classifications.
 function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now}={}){
@@ -23,8 +26,9 @@ function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now}={}
   return input;
  }});
 }
-function createTestCheckoutService({repository,quotes,stripe,clock=Date.now}={}){
+function createTestCheckoutService({repository,quotes,stripe,clock=Date.now,quoteLimitsEnabled=false}={}){
  if(!repository||!quotes?.quote||!stripe?.createCheckout||!stripe?.retrieveCheckout)throw Error('Test checkout dependencies required');
+ if(quoteLimitsEnabled===true&&typeof repository.quotePermit!=='function')throw Error('Durable checkout limits required');
  const result=(order,evidence)=>Object.freeze({test:true,orderId:order.id,state:order.state,url:order.state==='checkout_open'&&evidence.state==='open'?evidence.url:null,totalCents:order.snapshot?.totalCents??evidence.snapshot?.totalCents});
  async function recover({authorization,orderId},state){
   const a=state.attempt;
@@ -41,7 +45,19 @@ function createTestCheckoutService({repository,quotes,stripe,clock=Date.now}={})
   const hash=destinationHash(to);
   if(state.attempt&&state.attempt.input.shippingQuote.destinationHash!==hash)throw Error('Destination differs from the saved checkout');
   if(state.attempt&&state.attempt.phase!=='prepared')return recover({authorization,orderId},state);
-  if(!state.attempt){
+  let expiredPrepared=false;
+  if(state.attempt){
+   const expiry=typeof state.attempt.quote_expires_at==='string'?Date.parse(state.attempt.quote_expires_at):NaN;
+   if(!Number.isFinite(expiry))throw new CheckoutPending('Saved checkout quote needs reconciliation');
+   expiredPrepared=expiry<=clock();
+  }
+  if(!state.attempt||expiredPrepared){
+   if(quoteLimitsEnabled===true){
+    const permit=await repository.quotePermit({authorization,orderId});
+    if(permit?.test!==true||typeof permit.allowed!=='boolean'||!Number.isSafeInteger(permit.retryAfter)||
+     (permit.allowed?permit.retryAfter!==0:permit.retryAfter<1||permit.retryAfter>86400))throw Error('Invalid checkout limit evidence');
+    if(!permit.allowed)throw new CheckoutRateLimited(permit.retryAfter);
+   }
    const input=await quotes.quote({order,to});
    // Price, buyer and listing always come from the authenticated reservation.
    if(input.orderId!==order.id||input.buyerId!==order.buyer_id||input.listing?.id!==order.listing_id||input.listing?.seller_id!==order.seller_id||input.listing?.price_cents!==order.item_cents||input.listing?.updated_at!==order.listing_updated_at)throw Error('Quote does not match reservation');
@@ -62,4 +78,4 @@ function createTestCheckoutService({repository,quotes,stripe,clock=Date.now}={})
   return recover({authorization,orderId},await repository.checkoutAttempt({authorization,orderId}));
  }});
 }
-module.exports={createTestQuoteService,createTestCheckoutService,CheckoutPending};
+module.exports={createTestQuoteService,createTestCheckoutService,CheckoutPending,CheckoutRateLimited};

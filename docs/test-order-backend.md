@@ -80,3 +80,37 @@ The owner deferred paid Vercel/Supabase upgrades until immediately before launch
 ## Test account recovery
 
 The private page offers email sign-in without changing the existing test account or password. The browser requests `/auth/v1/otp` with `create_user=false`, an S256 PKCE challenge and the exact private preview callback. Only the initiating Chrome profile retains the short-lived verifier; callback exchange verifies the returned email and the server still enforces the staging member allowlist. Auth codes are removed from the address bar before further requests. Secrets and tokens are not logged. Open the email link in the same profile used to request it. Requests have a timeout and clear delivery/expiry errors. Staging uses Supabase default mail delivery, whose recipient restrictions must be verified before claiming successful email delivery. No custom SMTP or paid service was added. See [Supabase email sign-in](https://supabase.com/docs/guides/auth/auth-email-passwordless).
+
+
+## Durable quote budget prepared locally
+
+The sixth test migration, `20261030_checkout_quote_limits.sql`, adds one RLS-protected budget row per buyer and one service-role-only RPC. With the separate `RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED=true` flag, new quote calls require a fresh authenticated, owned reservation and a durable permit before any shipping or tax call. The account budget permits five quote attempts per one-minute window and twenty per twenty-four-hour window, shared across orders; failed provider calls still consume a permit. PostgreSQL row locking serializes budget decisions across workers. A refused permit returns HTTP 429 with Retry-After. Missing, cached, malformed or unavailable authority never grants a permit.
+
+Existing unexpired prepared and dispatched/known checkout attempts bypass this quote budget to retain their established recovery behavior, including GET-only recovery after an uncertain session creation. The feature is off by default, not remotely installed, and not proof of production card-testing defenses. PGlite tests validate the SQL transitions and queued attempts, but do not establish multi-connection Supabase load behavior. Gateway/device/IP defenses and provider-side hosted-card-attempt controls remain launch requirements.
+
+
+## Undispatched quote refresh and closed-checkout retry prepared locally
+
+The seventh migration, `20261030_checkout_quote_refresh.sql`, permits the same reserved order to receive fresh financial quotes only after the database confirms its preparation expired before any dispatch marker or provider session existed. The order, buyer, seller, item price and destination remain fixed. Fresh shipping/tax amounts must match the saved financial snapshot. Order and attempt locks keep the first newly committed current quote authoritative; competing requests still claim at most one provider creation. A dispatched, known or ambiguous provider result never takes this path. Contradictory dispatch markers stay held. Expired refresh calls consume the new account quote budget when its flag is enabled.
+
+The private buyer page offers Prepare a new test checkout only for an existing saved order that the authenticated order view reports expired or payment_failed. Clicking rechecks that exact buyer, item, order and closed state, then saves a new reference; it makes no payment request. The previous order remains in history. Cancel returns, open/pending/paid/review states and seller cards do not qualify. Late responses after sign-out cannot change the saved reference.
+
+Both migrations and source changes remain local pending the Vercel recovery/deployment step. Local browser QA uses synthetic records and is not deployed provider acceptance.
+
+
+## Buyer cancellation before dispatch prepared locally — October 31
+
+The eighth isolated-test migration, `20261031_cancel_preparation.sql`, adds a cancelled order state, a private capability helper, and the service-role-only `rr_test_cancel_preparation` RPC. It keeps the existing catalog, order and attempt lock order. Only the authenticated buyer can cancel a recorded prepared attempt with no dispatch/session markers, bound payment, financial snapshot, ledger, provider events, jobs or risk evidence. Reservations with no preparation record stay held because they lack sufficient dispatch evidence. The cancellation changes the order state and timestamp, keeps its history and attempt record, and releases its reservation claim without editing or relisting inventory. Repeated cancellation is idempotent.
+
+The member order view returns a buyer-only boolean capability, not provider identities. The private POST action accepts only orderId and authenticates the buyer independently. The browser checks the latest capability before sending, preserves its saved reference, and prevents late responses after sign-out from restoring private data. Cancellation never calls Stripe, issues a refund or expires an existing provider session. A dispatched or ambiguous checkout remains held for provider reconciliation. A canceled preparation can subsequently use the separately confirmed new-checkout-reference control.
+
+The migration and feature are prepared locally only. Automated SQL/HTTP/client checks and a synthetic browser preview pass; deployed acceptance and multi-connection Supabase races still need verification.
+
+
+## October 31 staging update
+
+All nine test migrations are now installed in the isolated staging project, including quote permits, undispatched quote refresh, preparation cancellation and refund review. The earlier “prepared locally” statements above describe their prior checkpoints. The quote budget still requires its separate runtime flag before enforcement. This installation does not enable live checkout, fulfillment or payouts.
+
+The read-only refund review endpoint independently authenticates the explicit test operator and returns only that operator's participant-order requests. It distinguishes preparation, uncertain dispatch, awaiting signed notice, processing, failed, confirmed and reconciliation states. Provider identities and raw events remain server-side. The UI clears review records on refresh, permission loss and sign-out; late responses cannot restore them. Review makes no payment requests or financial changes. The first 100 requests are returned with a continuation warning when more exist; it is not a complete reconciliation report.
+
+Local validation: 305 automated checks pass, including SQL grants, evidence conflicts, operator isolation, HTTP restrictions and stale-response privacy. A browser preview with synthetic records verifies the review layout. Real deployed operator purchase/refund acceptance remains pending.

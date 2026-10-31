@@ -4,7 +4,7 @@ const {createTestOrderRepository,OrderAccessDenied}=require('./test_order_reposi
 const {createTestQuoteService,createTestCheckoutService}=require('./test_checkout_service.cjs');
 const {createStripeTestCheckoutClient}=require('./marketplace_test_checkout.cjs');
 const {createStripeTestTaxClient}=require('./stripe_test_tax.cjs');
-const {createTestCheckoutHandler,createTestOrdersHandler}=require('./test_order_handlers.cjs');
+const {createTestCheckoutHandler,createTestOrdersHandler,createTestCancelPreparationHandler}=require('./test_order_handlers.cjs');
 const {createStripeTestRefundClient}=require('./stripe_test_refunds.cjs');
 const {createTestRefundService}=require('./test_refund_service.cjs');
 const {createTestRefundHandler}=require('./test_refund_handler.cjs');
@@ -38,13 +38,13 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(['refund','refund-access'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access','refund-review'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
-   if(action==='refund-access'){
+   if(['refund-access','refund-review'].includes(action)){
     if(req.method!=='GET'){res.setHeader('Allow','GET');send(405,{error:'Method not allowed'});return;}
     const query=new URL(req.url,'https://example.invalid').searchParams;
     if([...query.keys()].some(k=>k!=='action')||query.getAll('action').length!==1){send(400,{error:'Invalid access check'});return;}
-    try{send(200,await repository.refundAccess({authorization:req.headers?.authorization}));}
+    try{send(200,await repository[action==='refund-review'?'refundReview':'refundAccess']({authorization:req.headers?.authorization}));}
     catch(e){send(e instanceof OrderAccessDenied?403:503,{error:e instanceof OrderAccessDenied?'Refund operator access required':'Test refund access unavailable'});}
     return;
    }
@@ -53,6 +53,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
     await createTestRefundHandler({refunds:createTestRefundService({repository,stripe}),enabled:true})(req,res);return;
    }
    if(action==='orders'){await createTestOrdersHandler({repository,enabled:true})(req,res);return;}
+   if(action==='cancel-preparation'){await createTestCancelPreparationHandler({repository,enabled:true})(req,res);return;}
    if(action!=='checkout'){send(404,{error:'Not found'});return;}
    const base=createStripeTestCheckoutClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl,returnOrigin:RETURN});
    async function verifyAccount(){
@@ -67,7 +68,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
     if(id!==listing.id||!members.includes(order.seller_id))throw Error('Synthetic listing required');
     return {test:true,sellerId:order.seller_id,listingUpdatedAt:order.listing_updated_at,from:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'},package:{length:10,width:8,height:2,weight:1},itemTaxCode:'txcd_30011000',buyerFeeTaxCode:'txcd_30011000'};
    }});
-   const checkout=createTestCheckoutService({repository,quotes,stripe});
+   const checkout=createTestCheckoutService({repository,quotes,stripe,quoteLimitsEnabled:env.RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED==='true'});
    await createTestCheckoutHandler({checkout,enabled:true})(req,res);
   }catch{send(503,{error:'Private test checkout unavailable; check this order before retrying'});}
  };

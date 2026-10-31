@@ -11,9 +11,9 @@ const project='https://zvtaqzcqfdjpuwnlpzln.supabase.co',account='acct_1UWJZuGVb
 const input={authorization:'Bearer operator',requestId:rid,orderId:order,amountCents:1000};
 const snap={test:true,orderId:order,listingId:listing,sellerId:seller,currency:'USD',itemCents:2500,buyerFeeCents:100,shippingCents:500,taxCents:327,totalCents:3427};
 let db;
-const defs={rr_test_prepare_refund:['p_request','p_order','p_actor','p_amount'],rr_test_get_refund_request:['p_request','p_actor'],rr_test_dispatch_refund:['p_request','p_actor'],rr_test_save_refund:['p_request','p_actor','p_refund','p_charge'],rr_test_process_refund_receipt:['p_event','p_payload_hash','p_type','p_refund','p_payment_intent','p_charge','p_amount','p_currency','p_status','p_created','p_request']};
+const defs={rr_test_refund_review:['p_actor'],rr_test_prepare_refund:['p_request','p_order','p_actor','p_amount'],rr_test_get_refund_request:['p_request','p_actor'],rr_test_dispatch_refund:['p_request','p_actor'],rr_test_save_refund:['p_request','p_actor','p_refund','p_charge'],rr_test_process_refund_receipt:['p_event','p_payload_hash','p_type','p_refund','p_payment_intent','p_charge','p_amount','p_currency','p_status','p_created','p_request']};
 const rpc=async(name,p)=>(await db.query('select public.'+name+'('+defs[name].map((_,i)=>'$'+(i+1)).join(',')+') as result',defs[name].map(k=>p[k]))).rows[0].result;
-before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const f of ['order_ledger','payment_recovery','checkout_attempts','refund_receipts','refund_requests'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261030_'+f+'.sql'),'utf8'));});
+before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const f of ['order_ledger','payment_recovery','checkout_attempts','refund_receipts','refund_requests'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261030_'+f+'.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261031_refund_review.sql'),'utf8'));});
 after(async()=>db?.close());
 beforeEach(async()=>{
  await db.exec('truncate rr_sandbox.catalog cascade');
@@ -156,4 +156,36 @@ test('generated staging Edge receiver recovers an uncertain request from the sig
   assert.equal(url,project+'/rest/v1/rpc/rr_test_process_refund_receipt');const p=JSON.parse(opts.body);assert.equal(p.p_request,rid);return Response.json(await rpc('rr_test_process_refund_receipt',p));
  }});
  const s=signed(),request=new Request('https://example.test',{method:'POST',body:s.rawBody,headers:{'stripe-signature':s.signature}});assert.equal((await h(request)).status,200);assert.equal((await requestRow()).phase,'known');assert.deepEqual(await ledger(),{count:7,balance:0});assert.equal(posts(x.calls).length,1);
+});
+
+test('refund review follows verified evidence without financial writes or provider requests',async()=>{
+ const x=setup();assert.deepEqual(await x.repository.refundReview(input),{test:true,hasMore:false,requests:[]});
+ await x.repository.prepareRefund(input);
+ const state=async()=>{const result=await x.repository.refundReview(input);assert.equal(result.requests.length,1);assert.equal(result.requests[0].requestId,rid);return result.requests[0].reviewState;};
+ assert.equal(await state(),'not_dispatched');await x.repository.dispatchRefund(input);assert.equal(await state(),'outcome_unknown');
+ await x.repository.saveRefund({...input,refundId:'re_fixture',chargeId:'ch_fixture'});assert.equal(await state(),'awaiting_notice');
+ await x.repository.acceptStripeEvent(signed(refundObject({status:'pending'})));assert.equal(await state(),'processing');
+ await x.repository.acceptStripeEvent(signed(refundObject({status:'succeeded'}),{id:'evt_success',type:'refund.updated',created:Math.floor(Date.now()/1000)}));
+ const before=await ledger(),orderBefore=await orderRow();assert.equal(await state(),'confirmed');assert.deepEqual(await ledger(),before);assert.deepEqual(await orderRow(),orderBefore);
+ const body=JSON.stringify(await x.repository.refundReview(input));for(const secret of ['pi_fixture','ch_fixture','re_fixture',seller])assert.equal(body.includes(secret),false);
+ assert.equal(x.calls.some(c=>c.url.startsWith('https://api.stripe.com')),false);
+ await db.exec("update rr_sandbox.refunds set needs_review=true");assert.equal(await state(),'needs_review');
+});
+test('refund review exposes failed signed outcomes and isolates the requesting operator',async()=>{
+ const x=setup();await x.service.start(input);await x.repository.acceptStripeEvent(signed(refundObject({status:'failed'})));
+ assert.equal((await x.repository.refundReview(input)).requests[0].reviewState,'failed');
+ const count=x.calls.length;await assert.rejects(x.repository.refundReview({authorization:'Bearer buyer'}));assert.equal(x.calls.length,count+1);
+ assert.deepEqual(await rpc('rr_test_refund_review',{p_actor:buyer}),[]);
+ await db.exec('set role authenticated');try{await assert.rejects(db.query('select public.rr_test_refund_review($1)',[seller]),/permission denied/);}finally{await db.exec('reset role');}
+});
+test('refund review flags conflicting charge evidence instead of confirming it',async()=>{
+ const x=setup();await x.service.start(input);await x.repository.acceptStripeEvent(signed());await db.exec("update rr_sandbox.refund_requests set charge_id='ch_other'");
+ assert.equal((await x.repository.refundReview(input)).requests[0].reviewState,'needs_review');
+});
+test('refund review caps output and rejects malformed or foreign authority',async()=>{
+ const row={id:rid,order_id:order,actor_id:seller,participant:true,amount_cents:1000,phase:'known',receipt_status:null,needs_review:false,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),payment_intent_id:'pi_private'};
+ let rows=Array.from({length:101},()=>({...row}));const repository=createTestOrderRepository({projectUrl:project,serviceKey:'sb_secret_fixture',allowedMemberIds:[seller],allowedRefundOperatorIds:[seller],refundsEnabled:true,refundRequestsEnabled:true,fetchImpl:async url=>Response.json(url.endsWith('/auth/v1/user')?{id:seller}:rows)});
+ const result=await repository.refundReview(input);assert.equal(result.hasMore,true);assert.equal(result.requests.length,100);assert.equal(JSON.stringify(result).includes('pi_private'),false);
+ for(const patch of [{actor_id:buyer},{participant:false},{phase:'unknown'},{receipt_status:'unknown'},{amount_cents:0},{needs_review:1},{created_at:'invalid'},{id:'re_private'}]){rows=[{...row,...patch}];await assert.rejects(repository.refundReview(input));}
+ rows=Array(102).fill(row);await assert.rejects(repository.refundReview(input));
 });

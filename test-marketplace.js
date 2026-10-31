@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id),money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
- let config,emailSignin,token=null,member=null,busy=false,authVersion=0,renderVersion=0,refundWidgets=[];
+ let config,emailSignin,token=null,member=null,busy=false,authVersion=0,renderVersion=0,refundWidgets=[],checkoutWidgets=[];
  const callback=new URLSearchParams(location.search).get('code');
  if(callback||location.hash)history.replaceState(null,'',location.pathname);
  const note=text=>{$('notice').textContent=text;};
@@ -9,6 +9,11 @@
   const signed=!!token;$('signin').hidden=signed;$('signed-in').hidden=!signed;
   $('checkout').disabled=!signed||busy;$('refresh').disabled=!signed||busy;$('login').disabled=!config||busy;$('email-link').disabled=!config||busy;
   for(const update of refundWidgets)update(!signed||busy);
+  for(const update of checkoutWidgets)update(!signed||busy);
+ }
+ const checkoutKey=owner=>'rr-private-test-order-'+owner+':'+config.listing.id;
+ function savedCheckout(owner){
+  return sessionStorage.getItem(checkoutKey(owner))||(config.listing.id==='73737373-7373-4373-8373-737373737373'?sessionStorage.getItem('rr-private-test-order-'+owner):null);
  }
  async function api(action,options={},authorization=token){
   const r=await fetch('/api/test-marketplace?action='+action,{cache:'no-store',signal:AbortSignal.timeout(20000),...options,headers:{...(authorization?{Authorization:'Bearer '+authorization}:{}),...options.headers}});
@@ -57,19 +62,41 @@
   }
   card.append(section);
  }
+ async function loadRefundReview(version,owner,authorization){
+  const current=()=>version===renderVersion&&owner===member&&authorization===token;
+  try{
+   const result=await api('refund-review',{},authorization);
+   if(!current())return;
+   const labels={needs_review:'Needs review — amounts await reconciliation',not_dispatched:'Prepared — no dispatch recorded',outcome_unknown:'Outcome unknown — keep the same request reference',awaiting_notice:'Request recorded — awaiting verified refund notice',processing:'Refund processing — no confirmed refund amount',confirmed:'Refund confirmed by verified notice',failed:'Refund failed or cancelled — review the order before another request'};
+   if(result.test!==true||!Array.isArray(result.requests)||result.requests.length>100||typeof result.hasMore!=='boolean'||result.requests.some(q=>!Object.hasOwn(labels,q?.reviewState)||!Number.isSafeInteger(q.amountCents)||q.amountCents<1||typeof q.requestId!=='string'||typeof q.orderId!=='string'))throw Error('Refund review unavailable');
+   $('refund-review-rows').replaceChildren();
+   if(!result.requests.length){const empty=document.createElement('p');empty.textContent='No saved refund requests for your operator account.';$('refund-review-rows').append(empty);}
+   for(const q of result.requests){
+    const card=document.createElement('article');card.className='order';const status=document.createElement('strong');status.textContent=labels[q.reviewState];
+    const amount=document.createElement('p');amount.textContent='Requested '+money(q.amountCents);
+    const order=document.createElement('p');order.className='small';order.textContent='Order '+q.orderId;
+    const ref=document.createElement('p');ref.className='small';ref.textContent='Refund reference '+q.requestId;card.append(status,amount,order,ref);$('refund-review-rows').append(card);
+   }
+   if(result.hasMore){const more=document.createElement('p');more.textContent='More records need review. This list shows the first 100 requests.';$('refund-review-rows').append(more);}
+  }catch{
+   if(!current())return;const unavailable=document.createElement('p');unavailable.textContent='Refund review is temporarily unavailable. Keep your saved references and refresh orders to check again.';$('refund-review-rows').replaceChildren();$('refund-review-rows').append(unavailable);
+  }
+ }
  async function orders(){
   const version=++renderVersion,owner=member,authorization=token;
+  $('refund-review').hidden=true;$('refund-review-rows').replaceChildren();
   const [result,access]=await Promise.all([api('orders',{},authorization),api('refund-access',{},authorization).catch(()=>null)]);
   if(version!==renderVersion||owner!==member||authorization!==token)return false;
   const rows=result.orders;if(!Array.isArray(rows))throw Error('Invalid test order list');
   let refunds=null;
   if(access?.test===true&&access.allowed===true){refunds=createTestRefundRequests({storage:localStorage,memberId:owner,request:(action,options)=>{if(owner!==member||authorization!==token)throw Error('Sign in again before checking this request');return api(action,options,authorization);}});}
-  $('orders').replaceChildren();refundWidgets=[];
+  $('orders').replaceChildren();refundWidgets=[];checkoutWidgets=[];
+  if(refunds){$('refund-review').hidden=false;void loadRefundReview(version,owner,authorization);}
   if(!rows.length){const p=document.createElement('p');p.textContent='No test orders yet.';$('orders').append(p);return true;}
   for(const o of rows){
    const card=document.createElement('article');card.className='order';const title=document.createElement('strong');title.textContent=o.buyer_id===owner?'Your purchase':'Your sale';
-   const state=document.createElement('p'),labels={reserved:'Reserved — preparing checkout',checkout_open:'Awaiting payment',payment_pending:'Payment processing',payment_failed:'Payment failed',paid:'Payment confirmed — fulfillment on hold',expired:'Checkout expired',review:'Payment needs review'};state.textContent=labels[o.state]||'Awaiting confirmation';
-   const total=document.createElement('p');total.textContent=o.total_cents==null?'Total is being calculated':money(o.total_cents);const ref=document.createElement('p');ref.className='small';ref.textContent='Order '+o.id;card.append(title,state,total,ref);
+   const state=document.createElement('p'),labels={reserved:'Reserved — preparing checkout',checkout_open:'Awaiting payment',payment_pending:'Payment processing',payment_failed:'Payment failed',paid:'Payment confirmed — fulfillment on hold',expired:'Checkout expired',cancelled:'Preparation cancelled — no payment session created',review:'Payment needs review'};state.textContent=labels[o.state]||'Awaiting confirmation';
+   const total=document.createElement('p');total.hidden=o.state==='cancelled'&&o.total_cents==null;total.textContent=total.hidden?'':o.total_cents==null?'Total is being calculated':money(o.total_cents);const ref=document.createElement('p');ref.className='small';ref.textContent='Order '+o.id;card.append(title,state,total,ref);
    if(o.refund_state&&o.refund_state!=='none'){
     const refund=document.createElement('p');refund.className='small';const labels={pending:'Test refund processing',partial:'Partial test refund confirmed',refunded:'Full test refund confirmed',failed:'Test refund failed or cancelled',review:'Test refund needs review — amounts await reconciliation'};refund.textContent=labels[o.refund_state]||'Test refund awaiting review';
     if(o.refund_state!=='review'){
@@ -77,7 +104,32 @@
      if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
     }card.append(refund);
    }
-   if(refunds)refundPanel(card,o,refunds);$('orders').append(card);
+   if(refunds)refundPanel(card,o,refunds);
+   if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
+    const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel checkout preparation';
+    checkoutWidgets.push(disabled=>{cancel.disabled=disabled;});
+    cancel.addEventListener('click',()=>operation(async auth=>{
+     const latest=await api('orders');if(auth!==authVersion||owner!==member)return;
+     const prepared=Array.isArray(latest.orders)?latest.orders.find(row=>row.id===o.id):null;
+     if(!prepared||prepared.buyer_id!==owner||prepared.state!=='reserved'||prepared.can_cancel_preparation!==true)throw Error('Checkout may have started. Refresh orders before trying to cancel.');
+     const result=await api('cancel-preparation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id})});
+     if(auth!==authVersion||owner!==member)return;
+     if(result.test!==true||result.orderId!==o.id||result.state!=='cancelled')throw Error('Cancellation needs confirmation. Keep the saved order reference.');
+     await orders();if(auth===authVersion)note('Checkout preparation cancelled. The previous order remains in your history.');
+    }));card.append(cancel);
+   }
+   if(config?.listing?.id&&o.buyer_id===owner&&o.listing_id===config.listing.id&&['expired','payment_failed','cancelled'].includes(o.state)&&savedCheckout(owner)===o.id){
+    const next=document.createElement('button');next.type='button';next.className='secondary';next.textContent='Prepare a new test checkout';
+    checkoutWidgets.push(disabled=>{next.disabled=disabled;});
+    next.addEventListener('click',()=>operation(async auth=>{
+     const latest=await api('orders');if(auth!==authVersion||owner!==member)return;
+     const closed=Array.isArray(latest.orders)?latest.orders.find(row=>row.id===o.id):null;
+     if(!closed||closed.buyer_id!==owner||closed.listing_id!==config.listing.id||!['expired','payment_failed','cancelled'].includes(closed.state)||savedCheckout(owner)!==o.id)throw Error('The previous checkout needs confirmation. Refresh orders before starting again.');
+     sessionStorage.setItem(checkoutKey(owner),crypto.randomUUID());
+     await orders();if(auth===authVersion)note('The previous checkout is closed. Continue to checkout when you are ready for a new test order.');
+    }));card.append(next);
+   }
+   $('orders').append(card);
   }
   controls();return true;
  }
@@ -96,11 +148,10 @@
  $('signin').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;busy=true;controls();try{
   const r=await fetch(config.projectUrl+'/auth/v1/token?grant_type=password',{method:'POST',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{apikey:config.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({email:$('email').value,password:$('password').value})});$('password').value='';const session=await r.json();if(!r.ok)throw Error('Sign-in failed. Try the email sign-in link instead.');await acceptSession(session);
  }catch(e){note(e.name==='TimeoutError'?'Sign-in did not respond. Please try again.':e.message);}finally{$('password').value='';busy=false;controls();}});
- $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];sessionStorage.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();note('Signed out of the private test area.');controls();});
+ $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];checkoutWidgets=[];sessionStorage.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();$('refund-review').hidden=true;$('refund-review-rows').replaceChildren();note('Signed out of the private test area.');controls();});
  $('refresh').addEventListener('click',()=>operation(async version=>{await orders();if(version===authVersion)note('Orders refreshed from the test database.');}));
  $('checkout').addEventListener('click',()=>operation(async version=>{
-  const key='rr-private-test-order-'+member+':'+config.listing.id;let orderId=sessionStorage.getItem(key);
-  if(!orderId&&config.listing.id==='73737373-7373-4373-8373-737373737373')orderId=sessionStorage.getItem('rr-private-test-order-'+member);
+  const key=checkoutKey(member);let orderId=savedCheckout(member);
   if(!orderId)orderId=crypto.randomUUID();sessionStorage.setItem(key,orderId);
   note('Reserving the test item and calculating the total…');const data=await api('checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId,listingId:config.listing.id,to:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'}})});
   if(version!==authVersion)return;await orders();if(version!==authVersion)return;

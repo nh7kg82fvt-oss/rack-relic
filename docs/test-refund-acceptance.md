@@ -61,7 +61,7 @@ Do not alter the synthetic listing or clear its reservation to make a test pass.
 - Wayne explicitly approved two sandbox refunds, $10.00 and the remaining $24.27, on this same known integrated payment. Refund `re_3UWOwfGVbz9Pnhxd3u4wnXgN` succeeded for 1000 cents; staging showed partial, 1000 refunded, zero pending, one receipt, seven balanced ledger entries. Refund `re_3UWOwfGVbz9Pnhxd3YW7OVkn` succeeded for 2427 cents; Stripe then reported amount_refunded=3427 and refunded=true.
 - Final staging readback: purchase state paid, refund_state refunded, refunded_cents=3427, pending=0, risk review, listing sold, exactly two succeeded refund receipts with needs_review=false, nine ledger entries summing to zero. The four refund.created/refund.updated notices were all recorded, for five provider events total including payment. Stripe reports pending_webhooks=0 for all four notices. Distinct success notifications did not duplicate refund accounting.
 - Final jobs: prepare_test_label, seller_sale_notice, buyer_receipt, fraud_assessment, record_tax_transaction, reconcile_refund_tax and reconcile_refund_fees are held; manual_refund_review is pending. This does not imply tax/fee reversals, notifications, postage or payouts ran. The buyer refreshed the existing authenticated order page and it displayed Full test refund confirmed — Refunded $34.27.
-- This verifies provider-initiated refund receipt/accounting and buyer display. The application's operator-dispatch/lost-response path, explicit replay, failed/pending refunds, cancel, 3DS failure and seller-view acceptance remain outstanding. Preview operator configuration stays disabled. Main/production, real postage, payouts and paid upgrades were not changed.
+- This verifies provider-initiated refund receipt/accounting and buyer display. The application's operator-dispatch/lost-response path, explicit replay, failed/pending refunds, cancel, 3DS failure and seller-view acceptance remain outstanding. The four branch-scoped Preview settings were saved with owner approval, but the deployment using them is pending Vercel account recovery; the running operator route is still disabled. Main/production, real postage, payouts and paid upgrades were not changed.
 
 ## Remaining implementation
 
@@ -77,7 +77,31 @@ The private page checks `GET /api/test-marketplace?action=refund-access` with th
 
 For an authorized operator's eligible paid order, expand Operator test refund, enter dollars/cents and choose Review test refund. The amount and UUID are saved locally before an Issue button is offered. The amount can be changed only before dispatch. Issuing persists a dispatch marker before the POST. Any interruption, timeout, duplicate click or reload thereafter can only check the saved request with GET; there is no second browser POST. A known result is request-recorded evidence, never financial confirmation. A further request requires the prior reference to be known and the signed cumulative order refund to cover it with nothing pending. The old reference remains in local history. Corrupt or unavailable storage fails closed.
 
-Order loads and checkout returns also discard late responses after sign-out or account change. These changes do not enable operators or issue refunds by themselves. Current Preview operator settings remain disabled. The original fully refunded fixture is preserved; it cannot be reused for another purchase/refund acceptance run.
+Order loads and checkout returns also discard late responses after sign-out or account change. These changes do not enable operators or issue refunds by themselves. The Preview settings are saved only for test-only-marketplace-foundation; activation in a new deployment is pending the owner's Vercel account recovery. The original fully refunded fixture is preserved; it cannot be reused for another purchase/refund acceptance run.
 
 
 The optional branch setting `RACK_RELIC_TEST_LISTING_ID` accepts only the original synthetic jacket or the separate operator fixture `84848484-8484-4484-8484-848484848484`. All other IDs fail closed. The fixture SQL in `supabase/test/fixtures/operator_refund_jacket.sql` derives its seller from the original isolated catalog row, checks an existing fixture rather than resetting it, and never changes either item's sale/reservation state. The browser keeps checkout references per member AND fixture, migrating the original legacy reference only for the original item. The operator fixture and Preview override have not yet been activated.
+
+
+## Account recovery and next activation checkpoint
+
+On October 30, the owner approved sole-operator access for the existing test buyer, the isolated second fixture, one new $34.27 synthetic purchase and $10.00 then $24.27 test refunds. The second fixture was seeded without resetting the original sold/refunded fixture. The four Vercel configuration values were saved only for the test branch. Vercel requires an email verification step before redeploying; refreshing the existing linked GitHub sign-in did not remove that requirement. The owner submitted an account recovery request. Contact addresses, recovery identifiers and private legal filings stay in the local completion checkpoint, outside this repository. No new payment or operator refund has been dispatched.
+
+A separate sixth migration, `20261030_checkout_quote_limits.sql`, and `RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED=true` prepare a durable per-account quote budget. They are not installed or enabled remotely yet. Apply the migration once to isolated staging before enabling its flag in the test branch. A missing or invalid budget response fails closed before shipping/tax/provider work. These are limits on new quote calls, not complete device/IP, hosted-card-attempt or bot protections.
+
+
+## Additional checkout recovery prepared locally
+
+`20261030_checkout_quote_refresh.sql` is a seventh isolated-test migration. Apply it after the checkout-attempt schema and before deploying the matching service change; do not rewrite or rerun the original installed migration. An expired, never-dispatched preparation can refresh on the same order and fixed destination. Fresh quotes, dispatched attempts and unknown provider results remain immutable. Financial quote inputs must agree with the persisted snapshot. The private buyer UI separately allows a new reference only after a fresh signed-order view confirms the previous order expired or failed; a cancel return alone is insufficient. The action preserves old order history and does not create a payment session.
+
+SQL/HTTP/client tests and a synthetic local browser preview pass. The seventh migration has not been applied remotely. Real cancel/expiry, concurrent Supabase load and new purchase/refund provider acceptance remain outstanding.
+
+
+## Preparation cancellation checkpoint — October 31
+
+`20261031_cancel_preparation.sql` is an eighth first-install migration for isolated staging after all seven earlier test migrations. It permits an authenticated buyer to cancel only a recorded never-dispatched preparation, keeping its order history. A dispatched/unknown result, provider event, financial ledger, bound payment or any fulfillment/risk evidence prevents cancellation. The member-order capability is false for sellers and absent preparations. The HTTP action accepts only orderId, and the browser rechecks the latest eligibility before posting. This is not provider-session cancellation or a refund path. It is not installed remotely. The existing remote paid/refunded fixture remains untouched.
+
+
+### Read-only operator review
+
+The private preview now includes a refund request review list backed by `rr_test_refund_review`. Only the configured operator can retrieve their own requests for orders they participate in. “Request recorded” is distinct from a confirmed refund; only a matching signed receipt yields confirmation. Conflicting charge, payment or order evidence requires review. Loading this screen cannot dispatch or retry a refund. Local SQL, repository, HTTP, browser-state and synthetic visual checks pass; deployed acceptance remains pending.
