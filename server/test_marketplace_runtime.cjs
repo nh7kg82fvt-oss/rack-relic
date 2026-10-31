@@ -11,6 +11,8 @@ const {createTestRefundHandler}=require('./test_refund_handler.cjs');
 const {createStripeTestFeeClient}=require('./stripe_test_fees.cjs');
 const {createTestFeeService}=require('./test_fee_service.cjs');
 const {createTestFeeHandler}=require('./test_fee_handler.cjs');
+const {createShippoTestClient}=require('./shippo_test_client.cjs');
+const {createTestShippingHandler}=require('./test_shipping_handler.cjs');
 const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
 const LISTING='73737373-7373-4373-8373-737373737373';
@@ -41,8 +43,13 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(['refund','refund-access','refund-review','fee'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access','refund-review','fee','shipping-quote'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='shipping-quote'){
+    if(!/^shippo_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_SHIPPO_KEY||'')){send(404,{error:'Not found'});return;}
+    const shipping=createShippoTestClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl});
+    await createTestShippingHandler({repository,shipping,enabled:true})(req,res);return;
+   }
    if(['refund-access','refund-review'].includes(action)){
     if(req.method!=='GET'){res.setHeader('Allow','GET');send(405,{error:'Method not allowed'});return;}
     const query=new URL(req.url,'https://example.invalid').searchParams;

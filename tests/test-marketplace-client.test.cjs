@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
@@ -12,6 +12,7 @@ function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delaye
   calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',listing:{id:listingId,title:'Synthetic fixture'}});
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'denied'},{status:403});
   if(url.endsWith('refund-review')){if(delayedReview)await delayedReview;return reviewError?Response.json({error:'unavailable'},{status:503}):Response.json({test:true,hasMore,requests:reviewRequests});}
+  if(url.endsWith('shipping-quote')){if(delayedShipping)await delayedShipping;return Response.json(shippingReply||{test:true,mode:'carrier_connection_test',postagePurchased:false,checkoutChanged:false,rates:[{carrier:'USPS',service:'Ground Advantage',currency:'USD',amountCents:725}]});}
   if(url.includes('action=fee')){if(delayedFee)await delayedFee;return Response.json(feeReply||{test:true,orderId:ORDER,state:'recorded',grossCents:3427,feeCents:129,netCents:3298,payoutAvailable:false});}
   if(url.endsWith('orders')){reads++;if(delayedOrders&&reads>1)await delayedOrders;return Response.json({orders:noOrders?[]:[order]});}
   if(url.endsWith('cancel-preparation')){if(delayedCancel)await delayedCancel;order.state='cancelled';order.can_cancel_preparation=false;return Response.json({test:true,orderId:ORDER,state:'cancelled'});}
@@ -133,4 +134,19 @@ test('late fee results and duplicate clicks cannot restore private data after si
 });
 test('contradictory fee totals never appear as a confirmed processing fee',async()=>{
  const ui=setup({allowed:true,feeReply:{test:true,orderId:ORDER,state:'recorded',grossCents:3427,feeCents:129,netCents:3427,payoutAvailable:false}});await tick();await ui.all().find(n=>n.textContent==='Refresh fee from Stripe').fire();await tick();assert.equal(ui.all().some(n=>n.textContent.includes('fee recorded:')),false);assert.match(ui.get('notice').textContent,/needs review/);
+});
+
+test('carrier connection check is operator-only, manual and accepts no user addresses',async()=>{
+ const ordinary=setup();await tick();assert.equal(ordinary.get('shipping-test').hidden,true);assert.equal(ordinary.get('shipping-test-controls').children.length,0);
+ const ui=setup({allowed:true,noOrders:true});await tick();assert.equal(ui.get('shipping-test').hidden,false);assert.equal(ui.calls.some(c=>c.url?.endsWith('shipping-quote')),false);
+ await ui.get('shipping-test-controls').children[0].fire();await tick();const posts=ui.calls.filter(c=>c.options?.method==='POST');assert.equal(posts.length,1);assert.deepEqual(JSON.parse(posts[0].options.body),{});assert.ok(ui.get('shipping-test-results').children.some(p=>p.textContent==='USPS · Ground Advantage · $7.25'));assert.ok(ui.get('shipping-test-results').children.some(p=>p.textContent.includes('Checkout still uses simulated shipping')));
+ ui.setAllowed(false);await ui.get('refresh').fire();assert.equal(ui.get('shipping-test').hidden,true);assert.equal(ui.get('shipping-test-results').children.length,0);
+});
+test('duplicate carrier checks and late results after sign-out cannot reveal prices or make another request',async()=>{
+ let release;const delayedShipping=new Promise(r=>release=r),ui=setup({allowed:true,delayedShipping});await tick();const button=ui.get('shipping-test-controls').children[0],pending=button.fire();await button.fire();ui.get('logout').fire();release();await pending;await tick();assert.equal(ui.calls.filter(c=>c.url?.endsWith('shipping-quote')).length,1);assert.equal(ui.get('shipping-test').hidden,true);assert.equal(ui.get('shipping-test-results').children.length,0);
+});
+test('malformed carrier replies cannot show successful prices',async()=>{
+ for(const patch of [{test:false},{postagePurchased:true},{checkoutChanged:true},{rates:[]},{rates:[{carrier:'USPS',service:'Ground',currency:'USD',amountCents:-1}]}]){
+  const ui=setup({allowed:true,shippingReply:{test:true,mode:'carrier_connection_test',postagePurchased:false,checkoutChanged:false,rates:[{carrier:'USPS',service:'Ground',currency:'USD',amountCents:725}],...patch}});await tick();await ui.get('shipping-test-controls').children[0].fire();assert.equal(ui.get('shipping-test-results').children.length,0);assert.match(ui.get('notice').textContent,/need review/);
+ }
 });
