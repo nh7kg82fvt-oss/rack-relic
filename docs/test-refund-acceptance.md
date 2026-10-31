@@ -105,3 +105,23 @@ SQL/HTTP/client tests and a synthetic local browser preview pass. The seventh mi
 ### Read-only operator review
 
 The private preview now includes a refund request review list backed by `rr_test_refund_review`. Only the configured operator can retrieve their own requests for orders they participate in. “Request recorded” is distinct from a confirmed refund; only a matching signed receipt yields confirmation. Conflicting charge, payment or order evidence requires review. Loading this screen cannot dispatch or retry a refund. Local SQL, repository, HTTP, browser-state and synthetic visual checks pass; deployed acceptance remains pending.
+
+
+## Deployed operator acceptance — October 31, 2026
+
+This is the current checkpoint; earlier locally prepared/deployment-pending paragraphs are historical. All nine test migrations are installed in isolated staging, and Preview operator access plus the separate synthetic fixture are active on the test branch. The quote-budget runtime flag remains off. The existing GitHub integration successfully deployed the preview; the dashboard email recovery case remains separate.
+
+The owner-approved synthetic order `378482a4-1131-4afa-b60b-2a663313bffb` completed for $34.27. Stripe confirmed the exact session complete/paid and PaymentIntent succeeded, livemode=false. A blank test authentication screen initially stalled; resuming the same session preserved one order and payment. The final card authentication result was `attempt_acknowledged`, not a verified successful authentication challenge or permission to release fulfillment.
+
+The private operator UI then created and dispatched two requests:
+
+| Amount | Saved request | Provider refund |
+| --- | --- | --- |
+| $10.00 | `fd6aad3b-423e-45e6-8cd3-1e99a8df262e` | `re_3UWlEwGVbz9Pnhxd0dyCRjVu` |
+| $24.27 | `6c2d2e18-8f79-45dd-b6bb-be2d8574686c` | `re_3UWlEwGVbz9Pnhxd0jVxqlNb` |
+
+Provider readback returns exactly these two succeeded refunds, correct order/request metadata and no further page. Checking the saved first request did not create another refund. The UI distinguishes the HTTP request acknowledgement from signed confirmation and shows both verified receipts plus Full test refund confirmed — Refunded $34.27 after refresh.
+
+Direct staging readback confirms both requests known, two matching succeeded receipts with no review conflict, refunded_cents 3427, pending zero, nine ledger entries summing to zero, inventory sold and risk review. Label, notification, tax-recording and refund-tax/fee reconciliation jobs remain held; manual refund review remains pending. The original sold/refunded fixture was not reset. No live payment, transfer, payout or postage purchase occurred.
+
+Still required: controlled deployed lost-response/replay/out-of-order scenarios, pending/failed/cancelled refunds, cancellation/expiry, explicit authentication failure and seller isolation checks. This acceptance proves the application-initiated happy path and saved-request retrieval; it does not establish production readiness, fulfillment, tax settlement or seller payouts.
