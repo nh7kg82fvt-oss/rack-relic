@@ -33,6 +33,9 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   const actor=await member(authorization);
   if(!allowedRefundOperatorIds.includes(actor))throw new OrderAccessDenied('Refund operator access required');return actor;
  }
+ function validChargeFee(f,orderId,total,pi){
+  return f?.test===true&&f.orderId===orderId&&/^pi_[A-Za-z0-9]+$/.test(f.paymentIntentId||'')&&/^ch_[A-Za-z0-9]+$/.test(f.chargeId||'')&&/^txn_[A-Za-z0-9]+$/.test(f.balanceTransactionId||'')&&f.currency==='USD'&&Number.isSafeInteger(f.grossCents)&&f.grossCents>0&&f.grossCents<=30000000&&(total===undefined||f.grossCents===total)&&(pi===undefined||f.paymentIntentId===pi)&&Number.isSafeInteger(f.feeCents)&&f.feeCents>=0&&f.feeCents<=f.grossCents&&Number.isSafeInteger(f.netCents)&&f.netCents===f.grossCents-f.feeCents&&Number.isSafeInteger(f.checkedAt)&&Array.isArray(f.feeDetails)&&f.feeDetails.length<=20&&f.feeDetails.every(d=>['stripe_fee','tax'].includes(d?.type)&&d.currency==='USD'&&Number.isSafeInteger(d.amountCents)&&d.amountCents>=0)&&f.feeDetails.reduce((n,d)=>n+d.amountCents,0)===f.feeCents;
+ }
  return Object.freeze({
   async refundAccess({authorization}){
    await refundOperator(authorization);return {test:true,allowed:true};
@@ -44,6 +47,17 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    return {test:true,hasMore:rows.length>100,requests:rows.slice(0,100).map(q=>({requestId:q.id,orderId:q.order_id,amountCents:q.amount_cents,
     reviewState:q.needs_review?'needs_review':q.phase==='prepared'?'not_dispatched':q.phase==='dispatched'?'outcome_unknown':q.receipt_status===null?'awaiting_notice':q.receipt_status==='succeeded'?'confirmed':['failed','canceled'].includes(q.receipt_status)?'failed':'processing',
     createdAt:q.created_at,updatedAt:q.updated_at}))};
+  },
+  async feeOrder({authorization,orderId}){
+   id(orderId);const actor=await refundOperator(authorization),o=await rpc('rr_test_fee_order',{p_order:orderId,p_actor:actor});
+   if(o?.test!==true||o.orderId!==orderId||!/^pi_[A-Za-z0-9]+$/.test(o.paymentIntentId||'')||!Number.isSafeInteger(o.totalCents)||o.totalCents<1||o.totalCents>30000000||o.recordedFee!==null&&!validChargeFee(o.recordedFee,orderId,o.totalCents,o.paymentIntentId))throw new OrderServiceUnavailable('Invalid fee order');
+   return o;
+  },
+  async recordChargeFee({authorization,orderId,evidence}){
+   id(orderId);const actor=await refundOperator(authorization);
+   if(!validChargeFee(evidence,orderId))throw new OrderServiceUnavailable('Invalid fee evidence');
+   const fee=await rpc('rr_test_record_charge_fee',{p_order:orderId,p_actor:actor,p_evidence:evidence});
+   if(!validChargeFee(fee,orderId,evidence.grossCents,evidence.paymentIntentId)||fee.chargeId!==evidence.chargeId||fee.balanceTransactionId!==evidence.balanceTransactionId||fee.feeCents!==evidence.feeCents)throw new OrderServiceUnavailable('Invalid recorded fee');return fee;
   },
   async prepareRefund({authorization,requestId,orderId,amountCents}){
    id(requestId);id(orderId);

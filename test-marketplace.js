@@ -62,6 +62,21 @@
   }
   card.append(section);
  }
+ function feePanel(card,o){
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Original payment processing fee';status.textContent='Check the recorded fee or refresh its evidence from Stripe. This does not make a payout.';section.append(summary,status);
+  const version=renderVersion,owner=member,authorization=token,current=()=>version===renderVersion&&owner===member&&authorization===token;
+  const buttons=[];checkoutWidgets.push(disabled=>buttons.forEach(b=>b.disabled=disabled));
+  for(const [label,method] of [['Load recorded fee','GET'],['Refresh fee from Stripe','POST']]){
+   const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=label;buttons.push(button);
+   button.addEventListener('click',()=>operation(async()=>{
+    const result=await api(method==='GET'?'fee&orderId='+o.id:'fee',method==='POST'?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id})}:{},authorization);
+    if(!current())return;
+    if(result.test!==true||result.orderId!==o.id||result.payoutAvailable!==false||!['recorded','not_recorded'].includes(result.state)||result.state==='recorded'&&(!Number.isSafeInteger(result.grossCents)||result.grossCents!==o.total_cents||!Number.isSafeInteger(result.feeCents)||result.feeCents<0||result.feeCents>result.grossCents||!Number.isSafeInteger(result.netCents)||result.netCents!==result.grossCents-result.feeCents))throw Error('Processing fee needs review. No payout was made.');
+    status.textContent=result.state==='recorded'?'Original charge fee recorded: '+money(result.feeCents)+'. Charge net after this fee: '+money(result.netCents)+'.':'No original charge fee has been recorded yet.';
+   }));section.append(button);
+  }
+  const explain=document.createElement('p');explain.className='small';explain.textContent='This records the original charge fee only. Refund costs, other provider fees, tax and seller amounts still need reconciliation. The charge net is not a seller payout balance.';section.append(explain);card.append(section);
+ }
  async function loadRefundReview(version,owner,authorization){
   const current=()=>version===renderVersion&&owner===member&&authorization===token;
   try{
@@ -105,6 +120,7 @@
     }card.append(refund);
    }
    if(refunds)refundPanel(card,o,refunds);
+   if(refunds&&o.state==='paid')feePanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
     const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel checkout preparation';
     checkoutWidgets.push(disabled=>{cancel.disabled=disabled;});

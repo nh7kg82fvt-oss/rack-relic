@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
@@ -12,6 +12,7 @@ function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delaye
   calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',listing:{id:listingId,title:'Synthetic fixture'}});
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'denied'},{status:403});
   if(url.endsWith('refund-review')){if(delayedReview)await delayedReview;return reviewError?Response.json({error:'unavailable'},{status:503}):Response.json({test:true,hasMore,requests:reviewRequests});}
+  if(url.includes('action=fee')){if(delayedFee)await delayedFee;return Response.json(feeReply||{test:true,orderId:ORDER,state:'recorded',grossCents:3427,feeCents:129,netCents:3298,payoutAvailable:false});}
   if(url.endsWith('orders')){reads++;if(delayedOrders&&reads>1)await delayedOrders;return Response.json({orders:noOrders?[]:[order]});}
   if(url.endsWith('cancel-preparation')){if(delayedCancel)await delayedCancel;order.state='cancelled';order.can_cancel_preparation=false;return Response.json({test:true,orderId:ORDER,state:'cancelled'});}
   if(url.endsWith('checkout')){if(delayedCheckout)await delayedCheckout;return Response.json({url:'https://checkout.stripe.com/fixture'});}
@@ -119,4 +120,17 @@ test('operator permission loss clears the previous review and missing review sch
 test('empty order lists still load review and inherited status labels are rejected',async()=>{
  const empty=setup({allowed:true,noOrders:true});await tick();assert.equal(empty.get('refund-review').hidden,false);assert.ok(empty.reviewAll().some(n=>n.textContent.includes('No saved refund requests')));
  const malformed=setup({allowed:true,reviewRequests:[{requestId:REQUEST,orderId:ORDER,amountCents:1000,reviewState:'toString'}]});await tick();assert.ok(malformed.reviewAll().some(n=>n.textContent.includes('temporarily unavailable')));assert.equal(malformed.reviewAll().some(n=>n.tag==='article'),false);
+});
+
+test('only operators can view processing-fee controls and refresh records no payout',async()=>{
+ const ordinary=setup();await tick();assert.equal(ordinary.all().some(n=>n.textContent==='Original payment processing fee'),false);
+ const ui=setup({allowed:true});await tick();assert.ok(ui.all().some(n=>n.textContent==='Original payment processing fee'));
+ await ui.all().find(n=>n.textContent==='Load recorded fee').fire();await tick();assert.equal(ui.calls.filter(c=>c.url?.includes('action=fee')&&c.options?.method==='POST').length,0);
+ await ui.all().find(n=>n.textContent==='Refresh fee from Stripe').fire();await tick();const post=ui.calls.find(c=>c.url?.includes('action=fee')&&c.options?.method==='POST');assert.deepEqual(JSON.parse(post.options.body),{orderId:ORDER});assert.ok(ui.all().some(n=>n.textContent.includes('fee recorded: $1.29')));assert.ok(ui.all().some(n=>n.textContent.includes('not a seller payout balance')));
+});
+test('late fee results and duplicate clicks cannot restore private data after sign-out',async()=>{
+ let release;const delayedFee=new Promise(r=>release=r),ui=setup({allowed:true,delayedFee});await tick();const button=ui.all().find(n=>n.textContent==='Refresh fee from Stripe'),work=button.fire();await tick();await button.fire();ui.get('logout').fire();release();await work;await tick();assert.equal(ui.get('orders').children.length,0);assert.equal(ui.calls.filter(c=>c.url?.includes('action=fee')&&c.options?.method==='POST').length,1);
+});
+test('contradictory fee totals never appear as a confirmed processing fee',async()=>{
+ const ui=setup({allowed:true,feeReply:{test:true,orderId:ORDER,state:'recorded',grossCents:3427,feeCents:129,netCents:3427,payoutAvailable:false}});await tick();await ui.all().find(n=>n.textContent==='Refresh fee from Stripe').fire();await tick();assert.equal(ui.all().some(n=>n.textContent.includes('fee recorded:')),false);assert.match(ui.get('notice').textContent,/needs review/);
 });

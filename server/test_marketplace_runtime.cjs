@@ -8,6 +8,9 @@ const {createTestCheckoutHandler,createTestOrdersHandler,createTestCancelPrepara
 const {createStripeTestRefundClient}=require('./stripe_test_refunds.cjs');
 const {createTestRefundService}=require('./test_refund_service.cjs');
 const {createTestRefundHandler}=require('./test_refund_handler.cjs');
+const {createStripeTestFeeClient}=require('./stripe_test_fees.cjs');
+const {createTestFeeService}=require('./test_fee_service.cjs');
+const {createTestFeeHandler}=require('./test_fee_handler.cjs');
 const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
 const LISTING='73737373-7373-4373-8373-737373737373';
@@ -38,7 +41,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(['refund','refund-access','refund-review'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access','refund-review','fee'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
    if(['refund-access','refund-review'].includes(action)){
     if(req.method!=='GET'){res.setHeader('Allow','GET');send(405,{error:'Method not allowed'});return;}
@@ -47,6 +50,10 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
     try{send(200,await repository[action==='refund-review'?'refundReview':'refundAccess']({authorization:req.headers?.authorization}));}
     catch(e){send(e instanceof OrderAccessDenied?403:503,{error:e instanceof OrderAccessDenied?'Refund operator access required':'Test refund access unavailable'});}
     return;
+   }
+   if(action==='fee'){
+    const stripe=createStripeTestFeeClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
+    await createTestFeeHandler({fees:createTestFeeService({repository,stripe}),enabled:true})(req,res);return;
    }
    if(action==='refund'){
     const stripe=createStripeTestRefundClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
