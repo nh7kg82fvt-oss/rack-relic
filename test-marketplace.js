@@ -77,6 +77,16 @@
   }
   const explain=document.createElement('p');explain.className='small';explain.textContent='This records the original charge fee only. Refund costs, other provider fees, tax and seller amounts still need reconciliation. The charge net is not a seller payout balance.';section.append(explain);card.append(section);
  }
+ function fulfillmentPanel(card,o){
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Shipping readiness';status.textContent='Check the saved shipping evidence and holds. Label purchase remains disabled.';button.textContent='Check shipping readiness';button.type='button';button.className='secondary';section.append(summary,status,button);card.append(section);
+  const version=renderVersion,owner=member,authorization=token;checkoutWidgets.push(disabled=>button.disabled=disabled);
+  button.addEventListener('click',()=>operation(async()=>{
+   const r=await api('fulfillment&orderId='+o.id,{},authorization);if(version!==renderVersion||owner!==member||authorization!==token)return;
+   const labels={payment_unconfirmed:'Payment is not confirmed',risk_hold:'Payment risk review is on hold',refund_hold:'Refund review prevents fulfillment',snapshot_missing:'The original private shipping snapshot is missing',quote_expired:'The carrier quote has expired',job_held:'The shipping job is on hold'};
+   if(r.test!==true||r.orderId!==o.id||r.labelPurchaseEnabled!==false||typeof r.snapshotStored!=='boolean'||!Array.isArray(r.holdReasons)||r.holdReasons.some(h=>!Object.hasOwn(labels,h))||new Set(r.holdReasons).size!==r.holdReasons.length||r.state!==(r.holdReasons.length?'held':'ready_for_review'))throw Error('Shipping readiness needs review. Label purchase remains disabled.');
+   status.textContent=(r.snapshotStored?'Private shipping snapshot saved. ':'Private shipping snapshot not saved. ')+(r.holdReasons.length?r.holdReasons.map(h=>labels[h]).join('. ')+'. ':'Ready for label review. ')+'Label purchase remains disabled.';
+  }));
+ }
  function shippingPanel(){
   $('shipping-test').hidden=false;$('shipping-test-results').replaceChildren();
   const version=renderVersion,owner=member,authorization=token,current=()=>version===renderVersion&&owner===member&&authorization===token;
@@ -136,6 +146,7 @@
    }
    if(refunds)refundPanel(card,o,refunds);
    if(refunds&&o.state==='paid')feePanel(card,o);
+   if(refunds)fulfillmentPanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
     const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel checkout preparation';
     checkoutWidgets.push(disabled=>{cancel.disabled=disabled;});

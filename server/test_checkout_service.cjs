@@ -7,7 +7,7 @@ class CheckoutRateLimited extends Error{
 }
 // Only a trusted server loader may supply a synthetic seller's return address,
 // packed dimensions, listing version and explicit tax classifications.
-function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now}={}){
+function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now,captureFulfillment=false}={}){
  if(!shipping?.quote||!tax?.quote||typeof loadFulfillment!=='function')throw Error('Test quote providers required');
  return Object.freeze({async quote({order,to}){
   const destination=usAddress(to),source=await loadFulfillment(order.listing_id,order);
@@ -23,6 +23,10 @@ function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now}={}
   // Persist only the financial evidence, never addresses or provider payloads.
   input.taxQuote=Object.fromEntries(['test','status','country','currency','orderId','baseCents','amountCents','expiresAt','destinationHash','taxCalculationId','taxabilityReasons','blocked'].filter(k=>Object.hasOwn(result,k)).map(k=>[k,result[k]]));
   buildTestCheckout(input,clock());
+  if(captureFulfillment===true){
+   if(!/^[a-f0-9]{32}$/.test(shipment.id||'')||typeof rate.carrier!=='string'||!rate.carrier.trim()||rate.carrier.length>100||typeof rate.service!=='string'||!rate.service.trim()||rate.service.length>150)throw Error('Complete carrier evidence required');
+   input.fulfillment={test:true,shipmentId:shipment.id,rateId:rate.id,currency:'USD',amountCents:rate.amountCents,carrier:rate.carrier,service:rate.service,origin,destination,parcel:source.package,expiresAt:input.shippingQuote.expiresAt};
+  }
   return input;
  }});
 }
@@ -58,12 +62,14 @@ function createTestCheckoutService({repository,quotes,stripe,clock=Date.now,quot
      (permit.allowed?permit.retryAfter!==0:permit.retryAfter<1||permit.retryAfter>86400))throw Error('Invalid checkout limit evidence');
     if(!permit.allowed)throw new CheckoutRateLimited(permit.retryAfter);
    }
-   const input=await quotes.quote({order,to});
+   const {fulfillment,...input}=await quotes.quote({order,to});
    // Price, buyer and listing always come from the authenticated reservation.
    if(input.orderId!==order.id||input.buyerId!==order.buyer_id||input.listing?.id!==order.listing_id||input.listing?.seller_id!==order.seller_id||input.listing?.price_cents!==order.item_cents||input.listing?.updated_at!==order.listing_updated_at)throw Error('Quote does not match reservation');
    const snapshot=buildTestCheckout(input,clock());
    if(!/^[a-f0-9]{32}$/.test(input.shippingQuote.rateId)||!/^taxcalc_[A-Za-z0-9]+$/.test(input.taxQuote.taxCalculationId)||!/^[a-f0-9]{64}$/.test(input.shippingQuote.destinationHash)||input.taxQuote.destinationHash!==input.shippingQuote.destinationHash)throw Error('Missing order-bound quote evidence');
-   const prepared=await repository.prepareCheckout({authorization,orderId,input,snapshot,expiresAt:Math.min(input.shippingQuote.expiresAt,input.taxQuote.expiresAt)});
+   const args={authorization,orderId,input,snapshot,expiresAt:Math.min(input.shippingQuote.expiresAt,input.taxQuote.expiresAt)};
+   if(fulfillment&&typeof repository.prepareCarrierCheckout!=='function')throw Error('Private carrier snapshot storage required');
+   const prepared=fulfillment?await repository.prepareCarrierCheckout({...args,fulfillment}):await repository.prepareCheckout(args);
    if(prepared.input.shippingQuote.destinationHash!==hash)throw Error('Destination differs from the saved checkout');
   }
   const claim=await repository.dispatchCheckout({authorization,orderId});

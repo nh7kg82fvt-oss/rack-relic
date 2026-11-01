@@ -13,6 +13,7 @@ const {createTestFeeService}=require('./test_fee_service.cjs');
 const {createTestFeeHandler}=require('./test_fee_handler.cjs');
 const {createShippoTestClient}=require('./shippo_test_client.cjs');
 const {createTestShippingHandler}=require('./test_shipping_handler.cjs');
+const {createTestFulfillmentHandler}=require('./test_fulfillment_handler.cjs');
 const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
 const LISTING='73737373-7373-4373-8373-737373737373';
@@ -46,8 +47,11 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(['refund','refund-access','refund-review','fee','shipping-quote'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access','refund-review','fee','shipping-quote','fulfillment'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='fulfillment'){
+    await createTestFulfillmentHandler({repository,enabled:true})(req,res);return;
+   }
    if(action==='shipping-quote'){
     if(!/^shippo_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_SHIPPO_KEY||'')){send(404,{error:'Not found'});return;}
     const shipping=createShippoTestClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl});
@@ -82,7 +86,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
    const stripe={createCheckout:async input=>{await verifyAccount();return base.createCheckout(input);},retrieveCheckout:async input=>{await verifyAccount();return base.retrieveCheckout(input);}};
    const tax=createStripeTestTaxClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl});
    const shipping=shippingMode==='shippo_test'?createShippoTestClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl}):{async quote(){return {test:true,rates:[{id:'c'.repeat(32),test:true,currency:'USD',amountCents:500}]};}};
-   const quotes=createTestQuoteService({tax,shipping,loadFulfillment:async(id,order)=>{
+   const quotes=createTestQuoteService({tax,shipping,captureFulfillment:shippingMode==='shippo_test',loadFulfillment:async(id,order)=>{
     if(id!==listing.id||!members.includes(order.seller_id))throw Error('Synthetic listing required');
     return {test:true,sellerId:order.seller_id,listingUpdatedAt:order.listing_updated_at,from:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'},package:{length:10,width:8,height:2,weight:1},itemTaxCode:'txcd_30011000',buyerFeeTaxCode:'txcd_30011000'};
    }});

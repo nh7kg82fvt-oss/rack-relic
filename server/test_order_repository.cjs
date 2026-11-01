@@ -1,6 +1,7 @@
 'use strict';
 const {createHash}=require('node:crypto');
 const {verifyStripeTestEvent,stripeTestEventRpc}=require('./marketplace_test_checkout.cjs');
+const {validateFulfillment,publicFulfillmentStatus}=require('./test_fulfillment.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -108,6 +109,14 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   async prepareCheckout({authorization,orderId,input,snapshot,expiresAt}){
    id(orderId);const buyer=await member(authorization);
    return rpc('rr_test_prepare_checkout',{p_order:orderId,p_buyer:buyer,p_input:input,p_snapshot:snapshot,p_expires:new Date(expiresAt).toISOString()});
+  },
+  async prepareCarrierCheckout({authorization,orderId,input,snapshot,expiresAt,fulfillment}){
+   id(orderId);const buyer=await member(authorization);validateFulfillment(fulfillment,input);
+   return rpc('rr_test_prepare_carrier_checkout',{p_order:orderId,p_buyer:buyer,p_input:input,p_snapshot:snapshot,p_expires:new Date(expiresAt).toISOString(),p_fulfillment:fulfillment});
+  },
+  async fulfillmentStatus({authorization,orderId}){
+   id(orderId);const actor=await refundOperator(authorization);
+   return publicFulfillmentStatus(await rpc('rr_test_fulfillment_status',{p_order:orderId,p_actor:actor}),orderId);
   },
   async dispatchCheckout({authorization,orderId}){
    id(orderId);const buyer=await member(authorization);

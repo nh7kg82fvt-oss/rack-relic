@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
@@ -12,6 +12,7 @@ function setup({allowed=false,delayedOrders,delayedCheckout,delayedCancel,delaye
   calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',shippingMode,listing:{id:listingId,title:'Synthetic fixture'}});
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'denied'},{status:403});
   if(url.endsWith('refund-review')){if(delayedReview)await delayedReview;return reviewError?Response.json({error:'unavailable'},{status:503}):Response.json({test:true,hasMore,requests:reviewRequests});}
+  if(url.includes('action=fulfillment')){if(delayedFulfillment)await delayedFulfillment;return Response.json(fulfillmentReply||{test:true,orderId:ORDER,state:'held',snapshotStored:false,labelPurchaseEnabled:false,holdReasons:['snapshot_missing','refund_hold']});}
   if(url.endsWith('shipping-quote')){if(delayedShipping)await delayedShipping;return Response.json(shippingReply||{test:true,mode:'carrier_connection_test',postagePurchased:false,checkoutChanged:false,rates:[{carrier:'USPS',service:'Ground Advantage',currency:'USD',amountCents:725}]});}
   if(url.includes('action=fee')){if(delayedFee)await delayedFee;return Response.json(feeReply||{test:true,orderId:ORDER,state:'recorded',grossCents:3427,feeCents:129,netCents:3298,payoutAvailable:false});}
   if(url.endsWith('orders')){reads++;if(delayedOrders&&reads>1)await delayedOrders;return Response.json({orders:noOrders?[]:[order]});}
@@ -152,4 +153,12 @@ test('malformed carrier replies cannot show successful prices',async()=>{
 });
 test('carrier checkout mode describes test prices accurately without changing saved orders',async()=>{
  const ui=setup({allowed:true,shippingMode:'shippo_test'});await tick();assert.match(ui.get('shipping-caption').textContent,/Shipping calculated by Shippo/);assert.equal(ui.get('shipping-caption').textContent.includes('$5'),false);assert.match(ui.get('test-intro').textContent,/Shippo test shipping/);assert.match(ui.get('shipping-test-description').textContent,/separate synthetic/);await ui.get('shipping-test-controls').children[0].fire();assert.ok(ui.get('shipping-test-results').children.some(p=>p.textContent.includes('destination')));assert.equal(ui.order.total_cents,3427);
+});
+test('shipping readiness is manual, operator-only, read-only and never enables a label',async()=>{
+ const ordinary=setup();await tick();assert.equal(ordinary.all().some(n=>n.textContent==='Check shipping readiness'),false);
+ const ui=setup({allowed:true});await tick();assert.equal(ui.calls.some(c=>c.url?.includes('action=fulfillment')),false);await ui.all().find(n=>n.textContent==='Check shipping readiness').fire();assert.ok(ui.all().some(n=>n.textContent.includes('original private shipping snapshot is missing')));assert.ok(ui.all().some(n=>n.textContent.includes('Label purchase remains disabled')));assert.equal(ui.calls.filter(c=>c.options?.method==='POST').length,0);
+});
+test('shipping readiness rejects malformed results and cannot restore private state after sign-out',async()=>{
+ const ui=setup({allowed:true,fulfillmentReply:{test:true,orderId:ORDER,state:'ready_for_review',snapshotStored:true,labelPurchaseEnabled:true,holdReasons:[]}});await tick();await ui.all().find(n=>n.textContent==='Check shipping readiness').fire();assert.match(ui.get('notice').textContent,/needs review/);
+ let release;const pending=new Promise(r=>release=r),late=setup({allowed:true,delayedFulfillment:pending});await tick();const button=late.all().find(n=>n.textContent==='Check shipping readiness'),work=button.fire();await button.fire();late.get('logout').fire();release();await work;assert.equal(late.all().some(n=>n.textContent.includes('Private shipping snapshot')),false);assert.equal(late.calls.filter(c=>c.url?.includes('action=fulfillment')).length,1);
 });
