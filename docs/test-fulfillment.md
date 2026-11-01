@@ -21,3 +21,5 @@ The browser saves its request UUID before sending and never replaces it on refre
 The readiness GET still always returns `labelPurchaseEnabled:false`; it is not dispatch authority. When the separate sample workflow is configured, its UI explicitly says the readiness check does not generate a label. The operator sample workflow is manual and never valid postage. Actual browser/provider acceptance remains required before treating label generation as verified.
 
 Seller access to labels, tracking callbacks, delivery decisions, rate adjustments, label refunds and seller settlement remain separate implementation and acceptance work. Live shipping is not activated by either migration.
+
+Staging setup verification on October 31, 2026: both migrations applied successfully; all 13 private tables have RLS, browser table grants and sample-label RPC grants are zero, and only the existing backend role can claim an attempt. The sample-label flag is scoped to Preview / `test-only-marketplace-foundation`. The 361-check local suite passed. These checks establish setup and recovery behavior; they do not establish a completed provider label or a successful authenticated payment.
