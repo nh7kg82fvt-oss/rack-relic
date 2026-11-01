@@ -23,7 +23,8 @@ const LISTING='73737373-7373-4373-8373-737373737373';
 const LISTINGS=Object.freeze({
  [LISTING]:Object.freeze({id:LISTING,title:'Synthetic test jacket',priceCents:2500}),
  '84848484-8484-4484-8484-848484848484':Object.freeze({id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500}),
- '95959595-9595-4595-8595-959595959595':Object.freeze({id:'95959595-9595-4595-8595-959595959595',title:'Synthetic carrier quote jacket',priceCents:2500})
+ '95959595-9595-4595-8595-959595959595':Object.freeze({id:'95959595-9595-4595-8595-959595959595',title:'Synthetic carrier quote jacket',priceCents:2500}),
+ 'a6a6a6a6-a6a6-46a6-86a6-a6a6a6a6a6a6':Object.freeze({id:'a6a6a6a6-a6a6-46a6-86a6-a6a6a6a6a6a6',title:'Synthetic sender contact jacket',priceCents:2500})
 });
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetch}={}){

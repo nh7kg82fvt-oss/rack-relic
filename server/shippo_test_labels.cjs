@@ -23,7 +23,10 @@ function createShippoTestLabelClient({token,fetchImpl=globalThis.fetch,clock=Dat
   async quote(context){
    const s=context?.snapshot;if(context?.test!==true||!UUID.test(context.orderId||'')||!s||!ID.test(s.rateId||'')||!Number.isSafeInteger(context.shippingCents)||context.shippingCents<0)throw Error('Trusted private shipping context required');
    const addr=(a,name)=>({name,street1:a.line1,street2:a.line2,city:a.city,state:a.state,zip:a.postal_code,country:a.country});
-   const q=await shipping.quote({from:addr(s.origin,'Rack Relic synthetic sender'),to:addr(s.destination,'Rack Relic synthetic recipient'),package:s.parcel});
+   // USPS requires sender contact details even for a sample label. These
+   // reserved example contacts belong only to the fixed synthetic test flow.
+   const from={...addr(s.origin,'Rack Relic synthetic sender'),email:'sender@example.com',phone:'+12025550123'};
+   const q=await shipping.quote({from,to:addr(s.destination,'Rack Relic synthetic recipient'),package:s.parcel});
    const r=q.rates.filter(r=>r.test===true&&r.currency==='USD'&&Number.isSafeInteger(r.amountCents)&&r.amountCents>=0&&r.amountCents<=context.shippingCents&&r.carrier&&r.service).sort((a,b)=>a.amountCents-b.amountCents||a.id.localeCompare(b.id))[0];
    if(!r)throw Error('Fresh test postage exceeds the saved shipping budget or is unavailable');
    return {test:true,shipmentId:q.id,sourceRateId:s.rateId,rateId:r.id,currency:'USD',amountCents:r.amountCents,carrier:r.carrier,service:r.service,expiresAt:clock()+300000};

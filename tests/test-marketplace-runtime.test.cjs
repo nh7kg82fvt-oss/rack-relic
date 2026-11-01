@@ -33,6 +33,7 @@ test('refund access check is disabled by default and returns no configured ident
 test('only the fixed synthetic fixtures can be selected in the private branch',async()=>{
  const r=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'84848484-8484-4484-8484-848484848484'}})({method:'GET',url:'/api/test-marketplace?action=config'},r);assert.equal(r.statusCode,200);assert.deepEqual(JSON.parse(r.body).listing,{id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500});
  const carrier=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'95959595-9595-4595-8595-959595959595'}})({method:'GET',url:'/api/test-marketplace?action=config'},carrier);assert.equal(carrier.statusCode,200);assert.equal(JSON.parse(carrier.body).listing.title,'Synthetic carrier quote jacket');
+ const contact=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'a6a6a6a6-a6a6-46a6-86a6-a6a6a6a6a6a6'}})({method:'GET',url:'/api/test-marketplace?action=config'},contact);assert.equal(contact.statusCode,200);assert.equal(JSON.parse(contact.body).listing.title,'Synthetic sender contact jacket');
  const bad=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'99999999-9999-4999-8999-999999999999'},fetchImpl:()=>assert.fail('network')})({method:'GET',url:'/api/test-marketplace?action=config'},bad);assert.equal(bad.statusCode,503);
 });
 

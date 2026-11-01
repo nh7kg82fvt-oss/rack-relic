@@ -72,7 +72,7 @@ test('test label transport binds metadata, rate, mode and exact transaction; pri
 });
 test('fresh rate requests use the saved parcel and destination and cannot exceed collected shipping',async()=>{
  const c=await context(),bodies=[],client=createShippoTestLabelClient({token:'shippo_test_fixture',fetchImpl:async(u,o)=>{bodies.push(JSON.parse(o.body));return Response.json({test:true,object_id:shipment,rates:[{test:true,object_id:rate,currency:'USD',amount:'6.19',provider:'USPS',servicelevel:{name:'Ground'}},{test:true,object_id:'e'.repeat(32),currency:'USD',amount:'8.00',provider:'UPS',servicelevel:{name:'Ground'}}]});}});
- const fresh=await client.quote(c);assert.equal(fresh.amountCents,619);assert.equal(fresh.sourceRateId,originalRate);assert.equal(bodies[0].address_to.street1,address.line1);assert.equal(bodies[0].parcels[0].weight,'1');await assert.rejects(client.quote({...c,shippingCents:618}),/budget/);
+ const fresh=await client.quote(c);assert.equal(fresh.amountCents,619);assert.equal(fresh.sourceRateId,originalRate);assert.equal(bodies[0].address_to.street1,address.line1);assert.equal(bodies[0].address_from.email,'sender@example.com');assert.equal(bodies[0].address_from.phone,'+12025550123');assert.equal(bodies[0].address_to.email,undefined);assert.equal(bodies[0].parcels[0].weight,'1');await assert.rejects(client.quote({...c,shippingCents:618}),/budget/);
 });
 test('cached provider results and lost database-save responses stay held without a second POST',async()=>{
  const bad=createShippoTestLabelClient({token:'shippo_test_fixture',fetchImpl:async()=>Response.json({},{headers:{age:'1'}})});await assert.rejects(bad.create({orderId:order,requestId,quote}),/Fresh/);
