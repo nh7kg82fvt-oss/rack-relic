@@ -112,6 +112,14 @@
     {
       "source": "/safety",
       "destination": "/policies/safety.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/policies/privacy.html"
+    },
+    {
+      "source": "/community-guidelines",
+      "destination": "/policies/community-guidelines.html"
     }
   ],
   "headers": [

@@ -1,0 +1,19 @@
+name: Browsing site checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browsing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check browsing, account, photo and privacy behavior
+        run: node --test tests/account-gallery-flow.test.cjs tests/account-session.test.cjs tests/gallery-navigation.test.cjs tests/photo-delivery.test.cjs tests/safety-help.test.cjs tests/tracking-runtime.test.cjs tests/tracking.test.cjs tests/browsing-release.test.cjs
