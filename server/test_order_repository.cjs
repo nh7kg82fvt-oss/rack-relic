@@ -2,6 +2,7 @@
 const {createHash}=require('node:crypto');
 const {verifyStripeTestEvent,stripeTestEventRpc}=require('./marketplace_test_checkout.cjs');
 const {validateFulfillment,publicFulfillmentStatus}=require('./test_fulfillment.cjs');
+const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -118,6 +119,25 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    id(orderId);const actor=await refundOperator(authorization);
    return publicFulfillmentStatus(await rpc('rr_test_fulfillment_status',{p_order:orderId,p_actor:actor}),orderId);
   },
+  async labelAttempt({authorization,orderId,requestId}){
+   id(orderId);id(requestId);const actor=await refundOperator(authorization);
+   return validateLabelAttempt(await rpc('rr_test_label_attempt',{p_order:orderId,p_actor:actor}),orderId);
+  },
+  async labelContext({authorization,orderId,requestId}){
+   id(orderId);id(requestId);const actor=await refundOperator(authorization),c=await rpc('rr_test_label_context',{p_order:orderId,p_actor:actor});
+   if(c?.test!==true||c.orderId!==orderId||!Number.isSafeInteger(c.shippingCents)||c.shippingCents<0||c.shippingCents>100000||c.snapshot?.test!==true||c.snapshot.amountCents!==c.shippingCents)throw new OrderServiceUnavailable('Invalid private label context');
+   return c;
+  },
+  async claimLabel({authorization,orderId,requestId,quote}){
+   id(orderId);id(requestId);const actor=await refundOperator(authorization),c=await rpc('rr_test_claim_label',{p_order:orderId,p_actor:actor,p_request:requestId,p_quote:quote});
+   if(typeof c?.dispatch!=='boolean')throw new OrderServiceUnavailable('Invalid label claim');
+   return {dispatch:c.dispatch,attempt:validateLabelAttempt(c.attempt,orderId)};
+  },
+  async saveLabel({authorization,orderId,requestId,evidence}){
+   id(orderId);id(requestId);const actor=await refundOperator(authorization);
+   return validateLabelAttempt(await rpc('rr_test_save_label',{p_order:orderId,p_actor:actor,p_request:requestId,p_evidence:evidence}),orderId);
+  },
+  publicLabel,
   async dispatchCheckout({authorization,orderId}){
    id(orderId);const buyer=await member(authorization);
    return rpc('rr_test_dispatch_checkout',{p_order:orderId,p_buyer:buyer});

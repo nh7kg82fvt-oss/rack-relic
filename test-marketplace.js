@@ -78,14 +78,39 @@
   const explain=document.createElement('p');explain.className='small';explain.textContent='This records the original charge fee only. Refund costs, other provider fees, tax and seller amounts still need reconciliation. The charge net is not a seller payout balance.';section.append(explain);card.append(section);
  }
  function fulfillmentPanel(card,o){
-  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Shipping readiness';status.textContent='Check the saved shipping evidence and holds. Label purchase remains disabled.';button.textContent='Check shipping readiness';button.type='button';button.className='secondary';section.append(summary,status,button);card.append(section);
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Shipping readiness';const ending=config.sampleLabelsEnabled===true?'This check does not generate a label.':'Label purchase remains disabled.';status.textContent='Check the saved shipping evidence and holds. '+ending;button.textContent='Check shipping readiness';button.type='button';button.className='secondary';section.append(summary,status,button);card.append(section);
   const version=renderVersion,owner=member,authorization=token;checkoutWidgets.push(disabled=>button.disabled=disabled);
   button.addEventListener('click',()=>operation(async()=>{
    const r=await api('fulfillment&orderId='+o.id,{},authorization);if(version!==renderVersion||owner!==member||authorization!==token)return;
    const labels={payment_unconfirmed:'Payment is not confirmed',risk_hold:'Payment risk review is on hold',refund_hold:'Refund review prevents fulfillment',snapshot_missing:'The original private shipping snapshot is missing',quote_expired:'The carrier quote has expired',job_held:'The shipping job is on hold'};
    if(r.test!==true||r.orderId!==o.id||r.labelPurchaseEnabled!==false||typeof r.snapshotStored!=='boolean'||!Array.isArray(r.holdReasons)||r.holdReasons.some(h=>!Object.hasOwn(labels,h))||new Set(r.holdReasons).size!==r.holdReasons.length||r.state!==(r.holdReasons.length?'held':'ready_for_review'))throw Error('Shipping readiness needs review. Label purchase remains disabled.');
-   status.textContent=(r.snapshotStored?'Private shipping snapshot saved. ':'Private shipping snapshot not saved. ')+(r.holdReasons.length?r.holdReasons.map(h=>labels[h]).join('. ')+'. ':'Ready for label review. ')+'Label purchase remains disabled.';
+   status.textContent=(r.snapshotStored?'Private shipping snapshot saved. ':'Private shipping snapshot not saved. ')+(r.holdReasons.length?r.holdReasons.map(h=>labels[h]).join('. ')+'. ':'Ready for label review. ')+ending;
   }));
+ }
+ function sampleLabelPanel(card,o){
+  if(config.sampleLabelsEnabled!==true)return;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Operator sample shipping label';status.textContent='Free test label only. Payment, fresh risk review and refund checks must pass. Never valid postage.';section.append(summary,status);card.append(section);
+  const version=renderVersion,owner=member,authorization=token,current=()=>version===renderVersion&&owner===member&&authorization===token,key='rr-private-test-label-'+owner+':'+o.id;
+  const buttons=[],disable=disabled=>buttons.forEach(b=>b.disabled=disabled);checkoutWidgets.push(disable);
+  let saved;try{const raw=localStorage.getItem(key);saved=raw?JSON.parse(raw):null;if(saved&&(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(saved.requestId||'')||!['prepared','dispatched'].includes(saved.phase)))throw Error('Invalid saved sample reference');}catch{status.textContent='Saved sample reference needs review. Do not request another label.';return;}
+  const eligible=o.state==='paid'&&o.risk_status==='clear'&&o.refund_state==='none'&&o.refunded_cents===0&&o.refund_pending_cents===0;
+  const add=(text,fn)=>{const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=text;b.addEventListener('click',()=>operation(fn));buttons.push(b);section.append(b);};
+  if(!saved){if(eligible)add('Prepare free sample label',async()=>{const ref={requestId:crypto.randomUUID(),phase:'prepared'};localStorage.setItem(key,JSON.stringify(ref));if(current())await orders();});return;}
+  const reference=document.createElement('p');reference.className='small';reference.textContent='Sample reference '+saved.requestId;section.append(reference);section.open=true;
+  const result=async(method)=>{
+   const r=await api(method==='POST'?'sample-label':'sample-label&orderId='+o.id+'&requestId='+saved.requestId,method==='POST'?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id,requestId:saved.requestId})}:{},authorization);if(!current())return;
+   if(r.test!==true||r.orderId!==o.id||r.requestId!==saved.requestId||!['not_requested','outcome_unknown','processing','ready','failed'].includes(r.state)||r.state!=='ready'&&(r.labelUrl!==null||r.trackingNumber!==null))throw Error('Sample evidence needs review. Keep the same reference.');
+   if(r.state==='not_requested'&&method==='GET'){saved.phase='prepared';localStorage.setItem(key,JSON.stringify(saved));await orders();note('No label dispatch is recorded. The same reference can be reviewed again.');return;}
+   const messages={not_requested:'No dispatch recorded.',outcome_unknown:'Outcome unknown. Keep this reference and review Shippo before any further label request.',processing:'Sample is processing. Check this saved request again.',ready:'Sample label confirmed. This document is not valid postage.',failed:'Sample failed. Review the saved request; no automatic replacement will be issued.'};
+   if(r.state==='ready'){
+    let u;try{u=new URL(r.labelUrl);}catch{throw Error('Invalid sample document');}
+    if(u.protocol!=='https:'||u.username||u.password||u.port||!(/^shippo-delivery(?:-[a-z0-9-]+)?\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(u.hostname)||u.hostname==='deliver.goshippo.com')||typeof r.trackingNumber!=='string'||!r.trackingNumber||r.trackingNumber.length>100)throw Error('Invalid sample document');
+    const link=document.createElement('a');link.href=u.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open sample label — not valid postage';section.append(link);disable(true);
+   }
+   status.textContent=messages[r.state];
+  };
+  if(saved.phase==='prepared'&&eligible)add('Generate one free sample label',async()=>{saved.phase='dispatched';localStorage.setItem(key,JSON.stringify(saved));disable(true);try{await result('POST');}finally{if(current()){for(const b of buttons)b.hidden=true;add('Check saved sample label',()=>result('GET'));}}});
+  else add('Check saved sample label',()=>result('GET'));
  }
  function shippingPanel(){
   $('shipping-test').hidden=false;$('shipping-test-results').replaceChildren();
@@ -147,6 +172,7 @@
    if(refunds)refundPanel(card,o,refunds);
    if(refunds&&o.state==='paid')feePanel(card,o);
    if(refunds)fulfillmentPanel(card,o);
+   if(refunds)sampleLabelPanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
     const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel checkout preparation';
     checkoutWidgets.push(disabled=>{cancel.disabled=disabled;});
