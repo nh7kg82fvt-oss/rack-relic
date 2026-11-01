@@ -62,6 +62,18 @@
   }
   card.append(section);
  }
+ function riskPanel(card,o){
+  if(config.riskCheckEnabled!==true)return;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Test payment risk check';
+  const labels={pending:'Risk evidence has not been checked.',clear:'Risk evidence is clear for label review.',review:'Payment risk is held for review.',blocked:'Payment risk blocks fulfillment.'};status.textContent=Object.hasOwn(labels,o.risk_status)?labels[o.risk_status]:'Payment risk needs review.';
+  const explain=document.createElement('p');explain.className='small';explain.textContent='Refreshes Stripe test evidence. Existing review holds cannot be silently cleared. This does not generate a label or pay a seller.';button.type='button';button.className='secondary';button.textContent='Refresh test payment risk';section.append(summary,status,explain,button);card.append(section);
+  const version=renderVersion,owner=member,authorization=token;checkoutWidgets.push(disabled=>button.disabled=disabled);
+  button.addEventListener('click',()=>operation(async auth=>{
+   const r=await api('risk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id})},authorization);if(version!==renderVersion||owner!==member||authorization!==token)return;
+   if(r.test!==true||r.orderId!==o.id||!['clear','review','blocked'].includes(r.riskStatus)||!Number.isSafeInteger(r.checkedAt)||r.checkedAt<Date.now()-300000||r.checkedAt>Date.now()+30000||r.labelGenerated!==false||r.payoutCreated!==false)throw Error('Risk evidence needs review. No label or payout was created.');
+   await orders();if(auth===authVersion&&owner===member&&authorization===token)note(labels[r.riskStatus]+' No label or payout was created.');
+  }));
+ }
  function feePanel(card,o){
   const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Original payment processing fee';status.textContent='Check the recorded fee or refresh its evidence from Stripe. This does not make a payout.';section.append(summary,status);
   const version=renderVersion,owner=member,authorization=token,current=()=>version===renderVersion&&owner===member&&authorization===token;
@@ -170,7 +182,7 @@
     }card.append(refund);
    }
    if(refunds)refundPanel(card,o,refunds);
-   if(refunds&&o.state==='paid')feePanel(card,o);
+   if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);}
    if(refunds)fulfillmentPanel(card,o);
    if(refunds)sampleLabelPanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){

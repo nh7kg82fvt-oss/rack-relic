@@ -167,6 +167,13 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   async recordRisk(evidence){
    id(evidence?.orderId);if(evidence.test!==true)throw new OrderAccessDenied('Test evidence required');
    return rpc('rr_test_record_risk',{p_order:evidence.orderId,p_evidence:evidence,p_hash:createHash('sha256').update(JSON.stringify(evidence)).digest('hex')});
+  },
+  async recordOperatorRisk({authorization,orderId,evidence}){
+   id(orderId);const actor=await refundOperator(authorization);
+   if(evidence?.test!==true||evidence.orderId!==orderId||!['clear','review','blocked'].includes(evidence.decision))throw new OrderServiceUnavailable('Invalid risk evidence');
+   const o=await rpc('rr_test_fee_order',{p_order:orderId,p_actor:actor});
+   if(o?.test!==true||o.orderId!==orderId)throw new OrderAccessDenied('Order unavailable');
+   return rpc('rr_test_record_risk',{p_order:orderId,p_evidence:evidence,p_hash:createHash('sha256').update(JSON.stringify(evidence)).digest('hex')});
   }
  });
 }

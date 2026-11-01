@@ -2,14 +2,15 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({allowed=false,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({allowed=false,riskCheckEnabled=false,riskReply,delayedRisk,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
  const storage=map=>({getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)});
  let reads=0;const order={id:ORDER,buyer_id:MEMBER,seller_id:'33333333-3333-4333-8333-333333333333',state:'paid',total_cents:3427,refund_state:'none',refunded_cents:0,refund_pending_cents:0,listing_id:listingId,...orderPatch};
  const fetch=async(url,options)=>{
-  calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
+  calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,riskCheckEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
+  if(url.endsWith('action=risk')){if(delayedRisk)await delayedRisk;const reply=riskReply||{test:true,orderId:ORDER,riskStatus:'review',checkedAt:Date.now(),labelGenerated:false,payoutCreated:false};return Response.json(reply);}
   if(url.includes('action=sample-label')){if(delayedLabel)await delayedLabel;if(labelError)return Response.json({error:'Sample needs review'},{status:503});return Response.json(labelReply||{test:true,orderId:ORDER,requestId:REQUEST,state:'outcome_unknown',labelUrl:null,trackingNumber:null});}
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'denied'},{status:403});
   if(url.endsWith('refund-review')){if(delayedReview)await delayedReview;return reviewError?Response.json({error:'unavailable'},{status:503}):Response.json({test:true,hasMore,requests:reviewRequests});}
@@ -177,4 +178,14 @@ test('late sample replies and duplicate clicks cannot reveal documents after sig
 });
 test('a foreign sample URL never appears as a confirmed label',async()=>{
  const ui=setup({allowed:true,sampleLabelsEnabled:true,orderPatch:{risk_status:'clear'},labelReply:{test:true,orderId:ORDER,requestId:REQUEST,state:'ready',labelUrl:'https://attacker.example/sample.pdf',trackingNumber:'TEST123'}});await tick();await ui.all().find(n=>n.textContent==='Prepare free sample label').fire();await tick();await ui.all().find(n=>n.textContent==='Generate one free sample label').fire();await tick();assert.equal(ui.all().some(n=>n.tag==='a'),false);assert.equal(ui.all().some(n=>n.textContent.includes('Sample label confirmed')),false);assert.match(ui.get('notice').textContent,/Invalid sample/);
+});
+test('test risk controls require explicit activation, paid orders and operator access; browser supplies only the order',async()=>{
+ for(const options of [{allowed:true},{riskCheckEnabled:true},{allowed:true,riskCheckEnabled:true,orderPatch:{state:'checkout_open'}}]){const ui=setup(options);await tick();assert.equal(ui.all().some(n=>n.textContent==='Refresh test payment risk'),false);}
+ const ui=setup({allowed:true,riskCheckEnabled:true,orderPatch:{risk_status:'review'}});await tick();await ui.all().find(n=>n.textContent==='Refresh test payment risk').fire();await tick();const posts=ui.calls.filter(c=>c.url?.endsWith('action=risk'));assert.equal(posts.length,1);assert.deepEqual(JSON.parse(posts[0].options.body),{orderId:ORDER});assert.match(ui.get('notice').textContent,/held for review/);assert.match(ui.get('notice').textContent,/No label or payout/);
+});
+test('duplicate risk checks and late sign-out responses cannot restore private results',async()=>{
+ let release;const delayedRisk=new Promise(r=>release=r),ui=setup({allowed:true,riskCheckEnabled:true,delayedRisk});await tick();const b=ui.all().find(n=>n.textContent==='Refresh test payment risk'),work=b.fire();await b.fire();ui.get('logout').fire();release();await work;await tick();assert.equal(ui.get('orders').children.length,0);assert.equal(ui.calls.filter(c=>c.url?.endsWith('action=risk')).length,1);assert.match(ui.get('notice').textContent,/Signed out/);
+});
+test('malformed or stale risk responses never appear as a cleared payment',async()=>{
+ for(const patch of [{riskStatus:'toString'},{riskStatus:'clear',labelGenerated:true},{riskStatus:'clear',payoutCreated:true},{riskStatus:'clear',checkedAt:Date.now()-600000},{riskStatus:'clear',orderId:REQUEST}]){const ui=setup({allowed:true,riskCheckEnabled:true,riskReply:{test:true,orderId:ORDER,riskStatus:'clear',checkedAt:Date.now(),labelGenerated:false,payoutCreated:false,...patch}});await tick();await ui.all().find(n=>n.textContent==='Refresh test payment risk').fire();await tick();assert.match(ui.get('notice').textContent,/needs review/);assert.equal(ui.get('notice').textContent.includes('clear for label'),false);}
 });
