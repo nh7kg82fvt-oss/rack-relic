@@ -26,8 +26,9 @@ test('refund access check is disabled by default and returns no configured ident
  }
  for(const [method,url,status] of [['POST','/api/test-marketplace?action=refund-access',405],['GET','/api/test-marketplace?action=refund-access&actor=other',400]]){const r=res();await createTestMarketplaceRuntime({env:active,fetchImpl:()=>assert.fail('network')})({method,url},r);assert.equal(r.statusCode,status);}
 });
-test('only the two fixed synthetic fixtures can be selected in the private branch',async()=>{
+test('only the fixed synthetic fixtures can be selected in the private branch',async()=>{
  const r=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'84848484-8484-4484-8484-848484848484'}})({method:'GET',url:'/api/test-marketplace?action=config'},r);assert.equal(r.statusCode,200);assert.deepEqual(JSON.parse(r.body).listing,{id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500});
+ const carrier=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'95959595-9595-4595-8595-959595959595'}})({method:'GET',url:'/api/test-marketplace?action=config'},carrier);assert.equal(carrier.statusCode,200);assert.equal(JSON.parse(carrier.body).listing.title,'Synthetic carrier quote jacket');
  const bad=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_LISTING_ID:'99999999-9999-4999-8999-999999999999'},fetchImpl:()=>assert.fail('network')})({method:'GET',url:'/api/test-marketplace?action=config'},bad);assert.equal(bad.statusCode,503);
 });
 
@@ -53,4 +54,35 @@ test('carrier price test requires test key and fresh operator identity and canno
  for(const patch of [{RACK_RELIC_TEST_SHIPPO_KEY:undefined},{RACK_RELIC_TEST_SHIPPO_KEY:'shippo_live_fixture'},{RACK_RELIC_TEST_REFUNDS_ENABLED:''},{VERCEL_ENV:'production'},{VERCEL_GIT_COMMIT_REF:'main'}]){const q=await run({...active,...patch},operator);assert.equal(q.r.statusCode,404);assert.equal(q.calls.length,0);}
  const denied=await run(active,env.RACK_RELIC_TEST_MEMBER_IDS.split(',')[0]);assert.equal(denied.r.statusCode,403);assert.equal(denied.calls.length,1);
  const q=await run(active,operator);assert.equal(q.r.statusCode,200);assert.equal(q.calls.length,2);assert.equal(JSON.parse(q.r.body).postagePurchased,false);assert.equal(q.r.body.includes('shippo_test_'),false);
+});
+test('carrier checkout mode defaults to simulation and requires test credential plus durable quote limits',async()=>{
+ for(const patch of [{RACK_RELIC_TEST_SHIPPING_MODE:'live'},{RACK_RELIC_TEST_SHIPPING_MODE:'shippo_test'},{RACK_RELIC_TEST_SHIPPING_MODE:'shippo_test',RACK_RELIC_TEST_SHIPPO_KEY:'shippo_test_fixture'},{RACK_RELIC_TEST_SHIPPING_MODE:'shippo_test',RACK_RELIC_TEST_SHIPPO_KEY:'shippo_live_fixture',RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED:'true'}]){const r=res();await createTestMarketplaceRuntime({env:{...env,...patch},fetchImpl:()=>assert.fail('provider')})({method:'GET',url:'/api/test-marketplace?action=config'},r);assert.equal(r.statusCode,503);}
+ const r=res();await createTestMarketplaceRuntime({env:{...env,RACK_RELIC_TEST_SHIPPING_MODE:'shippo_test',RACK_RELIC_TEST_SHIPPO_KEY:'shippo_test_fixture',RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED:'true'},fetchImpl:()=>assert.fail('provider')})({method:'GET',url:'/api/test-marketplace?action=config'},r);assert.equal(r.statusCode,200);const data=JSON.parse(r.body);assert.equal(data.shippingMode,'shippo_test');assert.match(data.notice,/may differ from live/);assert.equal(r.body.includes('shippo_test_fixture'),false);
+});
+test('carrier checkout binds the authenticated order and carrier amount into tax and saved checkout before dispatch',async()=>{
+ const {Readable}=require('node:stream'),orderId='11111111-1111-4111-8111-111111111111',listing='84848484-8484-4484-8484-848484848484',buyer=env.RACK_RELIC_TEST_MEMBER_IDS.split(',')[0],seller=env.RACK_RELIC_TEST_MEMBER_IDS.split(',')[1];
+ const active={...env,RACK_RELIC_TEST_LISTING_ID:listing,RACK_RELIC_TEST_SHIPPING_MODE:'shippo_test',RACK_RELIC_TEST_SHIPPO_KEY:'shippo_test_fixture',RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED:'true'};
+ for(const permitted of [true,false]){
+  const calls=[],order={id:orderId,listing_id:listing,buyer_id:buyer,seller_id:seller,state:'reserved',item_cents:2500,buyer_fee_cents:100,listing_updated_at:'2026-10-31T12:00:00Z'};let prepared;
+  const r=res();await createTestMarketplaceRuntime({env:active,fetchImpl:async(url,options)=>{
+   calls.push(url);if(url.endsWith('/auth/v1/user'))return Response.json({id:buyer});
+   if(url.endsWith('/rr_test_reserve'))return Response.json(order);
+   if(url.endsWith('/rr_test_checkout_attempt'))return Response.json({order,attempt:null});
+   if(url.endsWith('/rr_test_quote_permit'))return Response.json({test:true,allowed:permitted,retryAfter:permitted?0:60});
+   if(url==='https://api.goshippo.com/shipments/'){
+    const body=JSON.parse(options.body);assert.equal(body.address_to.street1,'400 Broad St');assert.equal(body.address_from.name,'Synthetic test seller');assert.ok(calls.some(p=>p.endsWith('/rr_test_quote_permit')));return Response.json({test:true,object_id:'a'.repeat(32),rates:[{object_id:'b'.repeat(32),currency:'USD',amount:'8.00',provider:'USPS',servicelevel:{name:'Ground'}}]});
+   }
+   if(url.endsWith('/v1/tax/settings'))return Response.json({livemode:false,status:'active',head_office:{address:{country:'US'}}});
+   if(url.includes('/v1/tax/registrations'))return Response.json({object:'list',has_more:false,data:[{livemode:false,status:'active',active_from:1,country:'US',country_options:{us:{type:'state_sales_tax',state:'WA'}}}]});
+   if(url.endsWith('/v1/tax/calculations')){
+    const body=new URLSearchParams(options.body);assert.equal(body.get('shipping_cost[amount]'),'800');assert.equal(body.get('customer_details[address][postal_code]'),'98109');return Response.json({livemode:false,id:'taxcalc_fixture',currency:'usd',tax_amount_exclusive:100,tax_amount_inclusive:0,amount_total:3500,expires_at:Math.floor(Date.now()/1000)+600,line_items:{has_more:false,data:[{reference:orderId+'_item',amount:2500,tax_code:'txcd_30011000'},{reference:orderId+'_buyer_fee',amount:100,tax_code:'txcd_30011000'}]},tax_breakdown:[{amount:100,inclusive:false,tax_rate_details:{country:'US'},taxability_reason:'standard_rated'}]});
+   }
+   if(url.endsWith('/rr_test_prepare_checkout')){prepared=JSON.parse(options.body);return Response.json({input:prepared.p_input,snapshot:prepared.p_snapshot,phase:'prepared'});}
+   if(url.endsWith('/rr_test_dispatch_checkout'))throw Error('Stop before any payment-session dispatch in this fixture');
+   assert.fail('Unexpected operation '+url);
+  }})(Object.assign(Readable.from([JSON.stringify({orderId,listingId:listing,to:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'}})]),{method:'POST',url:'/api/test-marketplace?action=checkout',headers:{authorization:'Bearer fixture','content-type':'application/json'}}),r);
+  if(permitted){assert.equal(r.statusCode,503);assert.equal(prepared.p_input.shippingQuote.amountCents,800);assert.equal(prepared.p_input.shippingQuote.rateId,'b'.repeat(32));assert.equal(prepared.p_snapshot.totalCents,3500);assert.equal(prepared.p_snapshot.shippingCents,800);assert.equal(prepared.p_buyer,buyer);assert.equal(prepared.p_input.to,undefined);}
+  else{assert.equal(r.statusCode,429);assert.equal(prepared,undefined);assert.equal(calls.some(p=>p.includes('goshippo.com')),false);}
+  assert.equal(calls.some(p=>p.endsWith('/transactions/')||p.endsWith('/v1/checkout/sessions')),false);
+ }
 });

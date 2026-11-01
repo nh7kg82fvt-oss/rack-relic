@@ -18,7 +18,8 @@ const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic
 const LISTING='73737373-7373-4373-8373-737373737373';
 const LISTINGS=Object.freeze({
  [LISTING]:Object.freeze({id:LISTING,title:'Synthetic test jacket',priceCents:2500}),
- '84848484-8484-4484-8484-848484848484':Object.freeze({id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500})
+ '84848484-8484-4484-8484-848484848484':Object.freeze({id:'84848484-8484-4484-8484-848484848484',title:'Synthetic operator refund jacket',priceCents:2500}),
+ '95959595-9595-4595-8595-959595959595':Object.freeze({id:'95959595-9595-4595-8595-959595959595',title:'Synthetic carrier quote jacket',priceCents:2500})
 });
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetch}={}){
@@ -33,11 +34,13 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   const members=(env.RACK_RELIC_TEST_MEMBER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
   const selected=env.RACK_RELIC_TEST_LISTING_ID||LISTING;
   const listing=Object.hasOwn(LISTINGS,selected)?LISTINGS[selected]:null;
-  const configured=!!listing&&env.RACK_RELIC_TEST_CHECKOUT_ENABLED==='true'&&env.RACK_RELIC_TEST_SUPABASE_URL===ORIGIN&&members.length===2&&members.every(x=>UUID.test(x))&&/^sb_secret_[A-Za-z0-9_-]+$/.test(env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY||'')&&/^(sk|rk)_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_STRIPE_KEY||'')&&env.RACK_RELIC_TEST_STRIPE_ACCOUNT==='acct_1UWJZuGVbz9Pnhxd';
+  const shippingMode=env.RACK_RELIC_TEST_SHIPPING_MODE||'simulated';
+  const shippingReady=shippingMode==='simulated'||shippingMode==='shippo_test'&&/^shippo_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_SHIPPO_KEY||'')&&env.RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED==='true';
+  const configured=shippingReady&&!!listing&&env.RACK_RELIC_TEST_CHECKOUT_ENABLED==='true'&&env.RACK_RELIC_TEST_SUPABASE_URL===ORIGIN&&members.length===2&&members.every(x=>UUID.test(x))&&/^sb_secret_[A-Za-z0-9_-]+$/.test(env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY||'')&&/^(sk|rk)_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_STRIPE_KEY||'')&&env.RACK_RELIC_TEST_STRIPE_ACCOUNT==='acct_1UWJZuGVbz9Pnhxd';
   if(action==='config'&&req.method==='GET'){
    const publishable=env.RACK_RELIC_TEST_SUPABASE_PUBLISHABLE_KEY;
    if(!configured||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishable||'')){send(503,{test:true,error:'Private test checkout is being prepared'});return;}
-   send(200,{test:true,projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode:'simulated',notice:'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
+   send(200,{test:true,projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
   }
   if(!configured){send(503,{error:'Private test checkout unavailable'});return;}
   try{
@@ -78,7 +81,8 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
    }
    const stripe={createCheckout:async input=>{await verifyAccount();return base.createCheckout(input);},retrieveCheckout:async input=>{await verifyAccount();return base.retrieveCheckout(input);}};
    const tax=createStripeTestTaxClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl});
-   const quotes=createTestQuoteService({tax,shipping:{async quote(){return {test:true,rates:[{id:'c'.repeat(32),test:true,currency:'USD',amountCents:500}]};}},loadFulfillment:async(id,order)=>{
+   const shipping=shippingMode==='shippo_test'?createShippoTestClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl}):{async quote(){return {test:true,rates:[{id:'c'.repeat(32),test:true,currency:'USD',amountCents:500}]};}};
+   const quotes=createTestQuoteService({tax,shipping,loadFulfillment:async(id,order)=>{
     if(id!==listing.id||!members.includes(order.seller_id))throw Error('Synthetic listing required');
     return {test:true,sellerId:order.seller_id,listingUpdatedAt:order.listing_updated_at,from:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'},package:{length:10,width:8,height:2,weight:1},itemTaxCode:'txcd_30011000',buyerFeeTaxCode:'txcd_30011000'};
    }});

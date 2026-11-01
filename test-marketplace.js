@@ -87,7 +87,7 @@
    if(!current())return;
    if(result.test!==true||result.mode!=='carrier_connection_test'||result.postagePurchased!==false||result.checkoutChanged!==false||!Array.isArray(result.rates)||!result.rates.length||result.rates.length>100||result.rates.some(r=>r?.currency!=='USD'||!Number.isSafeInteger(r.amountCents)||r.amountCents<0||r.amountCents>100000||typeof r.carrier!=='string'||!r.carrier.trim()||r.carrier.length>100||typeof r.service!=='string'||!r.service.trim()||r.service.length>150))throw Error('Carrier test prices need review. No postage was purchased.');
    for(const r of result.rates){const p=document.createElement('p');p.textContent=r.carrier+' · '+r.service+' · '+money(r.amountCents);$('shipping-test-results').append(p);}
-   const p=document.createElement('p');p.className='small';p.textContent='Test prices received. Checkout still uses simulated shipping. No postage was purchased.';$('shipping-test-results').append(p);
+   const p=document.createElement('p');p.className='small';p.textContent=config.shippingMode==='shippo_test'?'Test prices received. New test checkouts calculate carrier prices separately for their destination. No postage was purchased.':'Test prices received. Checkout still uses simulated shipping. No postage was purchased.';$('shipping-test-results').append(p);
   }));$('shipping-test-controls').replaceChildren();$('shipping-test-controls').append(button);
  }
  async function loadRefundReview(version,owner,authorization){
@@ -189,7 +189,13 @@
   if(data.url){const u=new URL(data.url);if(u.protocol!=='https:'||u.hostname!=='checkout.stripe.com')throw Error('Unexpected checkout destination');location.assign(u.href);}else note('This order already has a payment result. Check the order list.');
  }));
  (async()=>{try{
-  config=await api('config');$('fixture-title').textContent=config.listing?.title||'Synthetic test jacket';emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
+  config=await api('config');$('fixture-title').textContent=config.listing?.title||'Synthetic test jacket';
+  if(config.shippingMode==='shippo_test'){
+   $('test-intro').textContent='Use your existing staging account. This separate test area uses a synthetic jacket, Shippo test shipping prices and Stripe’s test tax calculation. Nothing here purchases real postage or pays a seller.';
+   $('shipping-caption').textContent='Buyer fee: $1.00 · Shipping calculated by Shippo in test mode. Tax calculated for the Seattle test destination below.';
+   $('shipping-test-description').textContent='Checks Shippo with a separate synthetic 10 × 8 × 2 inch, 1 lb parcel from Seattle to New York. These prices may differ from live prices and from the destination-specific quote used in a checkout. No postage is purchased.';
+  }
+  emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
   let saved;try{saved=JSON.parse(sessionStorage.getItem('rr-private-test-session'));}catch{}
   if(saved?.token&&saved?.member){token=saved.token;member=saved.member;const version=authVersion;$('identity').textContent=saved.email||'Staging member';try{await orders();}catch{if(version===authVersion){token=null;member=null;sessionStorage.removeItem('rr-private-test-session');}}if(version!==authVersion)return;}
   note(new URLSearchParams(location.search).get('view')==='cancel'?'Checkout was cancelled. The item remains reserved until Stripe confirms expiry.':config.notice);controls();
