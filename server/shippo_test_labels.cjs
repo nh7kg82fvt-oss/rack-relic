@@ -38,6 +38,19 @@ function createShippoTestLabelClient({token,fetchImpl=globalThis.fetch,clock=Dat
   async retrieve({orderId,requestId,quote,transactionId}){
    marker(orderId,requestId);if(!ID.test(transactionId||''))throw Error('Saved sample transaction required');
    return evidence(await request('/transactions/'+transactionId+'/'),{orderId,requestId,quote,transactionId});
+  },
+  async tracking({orderId,requestId,quote,transactionId,trackingNumber}){
+   marker(orderId,requestId);if(!ID.test(transactionId||''))throw Error('Saved sample transaction required');
+   const d=await request('/transactions/'+transactionId+'/'),e=evidence(d,{orderId,requestId,quote,transactionId});
+   if(e.status!=='SUCCESS'||e.trackingNumber!==trackingNumber)throw Error('Successful matching sample required');
+   const t=d.tracking_status,status=typeof t==='string'?t:t?.status;
+   if(!['UNKNOWN','PRE_TRANSIT','TRANSIT','DELIVERED','RETURNED','FAILURE'].includes(status))throw Error('Unrecognized tracking status');
+   let eventAt=null;
+   if(t&&typeof t==='object'&&t.status_date!=null){
+    if(typeof t.status_date!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(t.status_date))throw Error('Tracking event timezone required');
+    eventAt=Date.parse(t.status_date);if(!Number.isSafeInteger(eventAt)||eventAt<1000000000000||eventAt>clock()+30000)throw Error('Invalid tracking event time');
+   }
+   return {test:true,orderId,requestId,transactionId,trackingNumber,carrier:quote.carrier,status,eventAt,checkedAt:clock(),source:'shippo_transaction'};
   }
  });
 }

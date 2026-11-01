@@ -2,14 +2,15 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({allowed=false,riskCheckEnabled=false,riskReply,delayedRisk,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({allowed=false,trackingEnabled=false,trackingReply,delayedTracking,riskCheckEnabled=false,riskReply,delayedRisk,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
  const storage=map=>({getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)});
  let reads=0;const order={id:ORDER,buyer_id:MEMBER,seller_id:'33333333-3333-4333-8333-333333333333',state:'paid',total_cents:3427,refund_state:'none',refunded_cents:0,refund_pending_cents:0,listing_id:listingId,...orderPatch};
  const fetch=async(url,options)=>{
-  calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,riskCheckEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
+  calls.push({url,options});if(url.endsWith('config'))return Response.json({notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,riskCheckEnabled,trackingEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
+  if(url.includes('action=tracking')){if(delayedTracking)await delayedTracking;return Response.json(trackingReply||{test:true,orderId:ORDER,state:'not_recorded',status:null,providerStatus:null,eventAt:null,checkedAt:null,needsReview:false,labelPurchaseEnabled:false,payoutAvailable:false});}
   if(url.endsWith('action=risk')){if(delayedRisk)await delayedRisk;const reply=riskReply||{test:true,orderId:ORDER,riskStatus:'review',checkedAt:Date.now(),labelGenerated:false,payoutCreated:false};return Response.json(reply);}
   if(url.includes('action=sample-label')){if(delayedLabel)await delayedLabel;if(labelError)return Response.json({error:'Sample needs review'},{status:503});return Response.json(labelReply||{test:true,orderId:ORDER,requestId:REQUEST,state:'outcome_unknown',labelUrl:null,trackingNumber:null});}
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'denied'},{status:403});
@@ -188,4 +189,19 @@ test('duplicate risk checks and late sign-out responses cannot restore private r
 });
 test('malformed or stale risk responses never appear as a cleared payment',async()=>{
  for(const patch of [{riskStatus:'toString'},{riskStatus:'clear',labelGenerated:true},{riskStatus:'clear',payoutCreated:true},{riskStatus:'clear',checkedAt:Date.now()-600000},{riskStatus:'clear',orderId:REQUEST}]){const ui=setup({allowed:true,riskCheckEnabled:true,riskReply:{test:true,orderId:ORDER,riskStatus:'clear',checkedAt:Date.now(),labelGenerated:false,payoutCreated:false,...patch}});await tick();await ui.all().find(n=>n.textContent==='Refresh test payment risk').fire();await tick();assert.match(ui.get('notice').textContent,/needs review/);assert.equal(ui.get('notice').textContent.includes('clear for label'),false);}
+});
+
+test('tracking is operator-only, manually loaded and refreshes only the current order',async()=>{
+ for(const options of [{trackingEnabled:true},{allowed:true}]){const ui=setup(options);await tick();assert.equal(ui.all().some(n=>n.textContent==='Sample shipment tracking'),false);}
+ const ui=setup({allowed:true,trackingEnabled:true});await tick();assert.equal(ui.calls.some(c=>c.url.includes('action=tracking')),false);
+ await ui.all().find(n=>n.textContent==='Load saved sample tracking').fire();await tick();assert.equal(ui.calls.filter(c=>c.options?.method==='POST').length,0);assert.ok(ui.all().some(n=>n.textContent==='No sample tracking check has been saved.'));
+ await ui.all().find(n=>n.textContent==='Refresh sample tracking').fire();await tick();const posts=ui.calls.filter(c=>c.options?.method==='POST');assert.equal(posts.length,1);assert.deepEqual(JSON.parse(posts[0].options.body),{orderId:ORDER});
+});
+test('tracking duplicate clicks and stale sign-out responses cannot expose results',async()=>{
+ let release;const pending=new Promise(r=>release=r),ui=setup({allowed:true,trackingEnabled:true,delayedTracking:pending});await tick();const button=ui.all().find(n=>n.textContent==='Refresh sample tracking'),work=button.fire();await button.fire();ui.get('logout').fire();release();await work;await tick();assert.equal(ui.calls.filter(c=>c.url.includes('action=tracking')).length,1);assert.equal(ui.all().length,1);assert.match(ui.get('notice').textContent,/Signed out/);
+});
+test('tracking reports bounded conflicts and rejects unknown status or financial authority',async()=>{
+ const reply={test:true,orderId:ORDER,state:'recorded',status:'DELIVERED',providerStatus:'TRANSIT',checkedAt:Date.now(),eventAt:null,needsReview:true,labelPurchaseEnabled:false,payoutAvailable:false};
+ const ui=setup({allowed:true,trackingEnabled:true,trackingReply:reply});await tick();await ui.all().find(n=>n.textContent==='Refresh sample tracking').fire();assert.ok(ui.all().some(n=>n.textContent.includes('Last accepted test status: Delivered. Latest provider test status: In transit.')));
+ for(const patch of [{status:'<foreign>'},{payoutAvailable:true},{labelPurchaseEnabled:true},{orderId:REQUEST},{checkedAt:'today'}]){const bad=setup({allowed:true,trackingEnabled:true,trackingReply:{...reply,...patch}});await tick();await bad.all().find(n=>n.textContent==='Refresh sample tracking').fire();assert.match(bad.get('notice').textContent,/needs review/);assert.equal(bad.all().some(n=>n.textContent.startsWith('Carrier test status:')),false);}
 });

@@ -62,6 +62,24 @@
   }
   card.append(section);
  }
+ function trackingPanel(card,o){
+  if(config.trackingEnabled!==true)return;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Sample shipment tracking';status.textContent='Check the saved sample status or refresh it from Shippo. Sample tracking does not establish real delivery or release seller funds.';section.append(summary,status);card.append(section);
+  const labels={UNKNOWN:'Unknown',PRE_TRANSIT:'Before carrier acceptance',TRANSIT:'In transit',DELIVERED:'Delivered',RETURNED:'Returning to sender',FAILURE:'Delivery problem'};
+  const version=renderVersion,owner=member,authorization=token,buttons=[];checkoutWidgets.push(disabled=>buttons.forEach(b=>b.disabled=disabled));
+  for(const [label,method] of [['Load saved sample tracking','GET'],['Refresh sample tracking','POST']]){
+   const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;buttons.push(b);section.append(b);
+   b.addEventListener('click',()=>operation(async()=>{
+    const r=await api(method==='GET'?'tracking&orderId='+o.id:'tracking',method==='POST'?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id})}:{},authorization);if(version!==renderVersion||owner!==member||authorization!==token)return;
+    if(r.test!==true||r.orderId!==o.id||!['not_recorded','recorded'].includes(r.state)||r.labelPurchaseEnabled!==false||r.payoutAvailable!==false||typeof r.needsReview!=='boolean')throw Error('Sample tracking needs review. No delivery decision was made.');
+    if(r.state==='not_recorded'){
+     if(r.status!==null||r.providerStatus!==null||r.eventAt!==null||r.checkedAt!==null||r.needsReview!==false)throw Error('Invalid saved sample tracking');status.textContent='No sample tracking check has been saved.';return;
+    }
+    if(!Object.hasOwn(labels,r.status)||!Object.hasOwn(labels,r.providerStatus)||!Number.isSafeInteger(r.checkedAt)||r.checkedAt<1000000000000||r.eventAt!==null&&(!Number.isSafeInteger(r.eventAt)||r.eventAt<1000000000000||r.eventAt>r.checkedAt+30000))throw Error('Sample tracking needs review. No delivery decision was made.');
+    status.textContent=r.needsReview?'Tracking update needs review. Last accepted test status: '+labels[r.status]+'. Latest provider test status: '+labels[r.providerStatus]+'.':'Carrier test status: '+labels[r.status]+'.';
+   }));
+  }
+ }
  function riskPanel(card,o){
   if(config.riskCheckEnabled!==true)return;
   const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Test payment risk check';
@@ -182,7 +200,7 @@
     }card.append(refund);
    }
    if(refunds)refundPanel(card,o,refunds);
-   if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);}
+   if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
    if(refunds)fulfillmentPanel(card,o);
    if(refunds)sampleLabelPanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){

@@ -20,6 +20,8 @@ const {createTestLabelHandler}=require('./test_label_handler.cjs');
 const {createStripeTestRiskClient}=require('./stripe_test_risk_client.cjs');
 const {createTestRiskService}=require('./test_risk_service.cjs');
 const {createTestRiskHandler}=require('./test_risk_handler.cjs');
+const {createTestTrackingService}=require('./test_tracking_service.cjs');
+const {createTestTrackingHandler}=require('./test_tracking_handler.cjs');
 const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
 const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
 const LISTING='73737373-7373-4373-8373-737373737373';
@@ -48,14 +50,19 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   if(action==='config'&&req.method==='GET'){
    const publishable=env.RACK_RELIC_TEST_SUPABASE_PUBLISHABLE_KEY;
    if(!configured||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishable||'')){send(503,{test:true,error:'Private test checkout is being prepared'});return;}
-   send(200,{test:true,projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
+   send(200,{test:true,projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',trackingEnabled:env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
   }
   if(!configured){send(503,{error:'Private test checkout unavailable'});return;}
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
-   if(['refund','refund-access','refund-review','fee','shipping-quote','fulfillment','sample-label','risk'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
+   if(['refund','refund-access','refund-review','fee','shipping-quote','fulfillment','sample-label','risk','tracking'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='tracking'){
+    if(env.RACK_RELIC_TEST_TRACKING_ENABLED!=='true'||shippingMode!=='shippo_test'){send(404,{error:'Not found'});return;}
+    const shipping=createShippoTestLabelClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl});
+    await createTestTrackingHandler({tracking:createTestTrackingService({repository,shipping}),enabled:true})(req,res);return;
+   }
    if(action==='risk'){
     if(env.RACK_RELIC_TEST_RISK_CHECK_ENABLED!=='true'){send(404,{error:'Not found'});return;}
     const stripe=createStripeTestRiskClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});

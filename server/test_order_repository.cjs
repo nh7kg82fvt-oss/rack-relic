@@ -3,6 +3,7 @@ const {createHash}=require('node:crypto');
 const {verifyStripeTestEvent,stripeTestEventRpc}=require('./marketplace_test_checkout.cjs');
 const {validateFulfillment,publicFulfillmentStatus}=require('./test_fulfillment.cjs');
 const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
+const {publicTrackingStatus}=require('./test_tracking_service.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -138,6 +139,19 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    return validateLabelAttempt(await rpc('rr_test_save_label',{p_order:orderId,p_actor:actor,p_request:requestId,p_evidence:evidence}),orderId);
   },
   publicLabel,
+  async trackingContext({authorization,orderId}){
+   id(orderId);const actor=await refundOperator(authorization),a=validateLabelAttempt(await rpc('rr_test_label_attempt',{p_order:orderId,p_actor:actor}),orderId);
+   if(a?.result?.status!=='SUCCESS'||!a.transactionId)throw new OrderServiceUnavailable('Successful saved sample required');return a;
+  },
+  async trackingStatus({authorization,orderId}){
+   id(orderId);const actor=await refundOperator(authorization);
+   return publicTrackingStatus(await rpc('rr_test_tracking_status',{p_order:orderId,p_actor:actor}),orderId);
+  },
+  async recordTracking({authorization,orderId,evidence}){
+   id(orderId);const actor=await refundOperator(authorization);
+   if(evidence?.test!==true||evidence.orderId!==orderId)throw new OrderServiceUnavailable('Invalid sample tracking');
+   return publicTrackingStatus(await rpc('rr_test_record_tracking',{p_order:orderId,p_actor:actor,p_evidence:evidence}),orderId);
+  },
   async dispatchCheckout({authorization,orderId}){
    id(orderId);const buyer=await member(authorization);
    return rpc('rr_test_dispatch_checkout',{p_order:orderId,p_buyer:buyer});
