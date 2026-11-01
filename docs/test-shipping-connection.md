@@ -14,4 +14,8 @@ When activated for a fresh synthetic fixture, the existing authenticated reserva
 
 A later fulfillment workflow still needs durable private address and parcel snapshots, rate expiry/requote rules, risk/refund gates, dispatch claims, uncertain-outcome reconciliation and tracking verification before label activation. Neither mode can purchase postage through this route.
 
+## Unpaid checkout acceptance
+
+After owner-approved test activation, deploy the exact preview branch with carrier mode, quote limits and the fresh synthetic fixture selected. Never reset a sold fixture. Verify the page identifies carrier test pricing, create one unpaid hosted test checkout, and compare its item, buyer fee, shipping, tax and total with the immutable database snapshot. Confirm a real test rate identifier and a test tax calculation are saved for that order, with no paid ledger entries or fulfillment jobs. Reloading checkout must retain the same order and session; it must not create another quote or session. Leave payment submission and label purchase closed during this acceptance step.
+
 Reference: [Shippo test mode](https://docs.goshippo.com/guides/testing). The existing client pins API version 2018-02-08.
