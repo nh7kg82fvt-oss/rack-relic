@@ -8,9 +8,24 @@
  function controls(){
   const signed=!!token;$('signin').hidden=signed;$('signed-in').hidden=!signed;
   $('checkout').disabled=!signed||busy;$('refresh').disabled=!signed||busy;$('login').disabled=!config||busy;$('email-link').disabled=!config||busy;
+  $('seller-onboarding').hidden=!signed||config?.sellerOnboardingEnabled!==true;
+  $('seller-status').disabled=!signed||busy;$('seller-start').disabled=!signed||busy;
+  if(!signed)$('seller-result').textContent='';
   for(const update of refundWidgets)update(!signed||busy);
   for(const update of checkoutWidgets)update(!signed||busy);
  }
+ async function sellerSetup(start){
+  await operation(async version=>{
+   $('seller-result').textContent='Checking test seller setup…';
+   const d=await api('seller-onboarding',start?{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}:{});
+   if(version!==authVersion||!token)return;
+   if(d.test!==true||d.transfersEnabled!==false||d.payoutsEnabled!==false)throw Error('Invalid seller status');
+   $('seller-result').textContent=d.state==='provider_ready'?'Stripe test verification complete. Transfers and payouts remain disabled.':d.state==='needs_reconciliation'?'Account creation needs review. Do not start another account.':d.state==='verification_pending'?'Stripe is reviewing the test information.':'Test seller setup is incomplete.';
+   if(start){const u=new URL(d.onboardingUrl);if(u.protocol!=='https:'||u.hostname!=='connect.stripe.com'||u.port||u.username||u.password||!u.pathname.startsWith('/setup/'))throw Error('Invalid Stripe onboarding link');location.assign(u.href);}
+  });
+ }
+ $('seller-status').addEventListener('click',()=>void sellerSetup(false));
+ $('seller-start').addEventListener('click',()=>void sellerSetup(true));
  const checkoutKey=owner=>'rr-private-test-order-'+owner+':'+config.listing.id;
  function savedCheckout(owner){
   return sessionStorage.getItem(checkoutKey(owner))||(config.listing.id==='73737373-7373-4373-8373-737373737373'?sessionStorage.getItem('rr-private-test-order-'+owner):null);
