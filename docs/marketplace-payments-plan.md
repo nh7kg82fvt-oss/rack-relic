@@ -2,6 +2,27 @@
 
 Reviewed October 30, 2026 (Pacific). Source baseline: `884b380ae7a35a772543cff127b77ae451796d5d`.
 
+## Owner direction: follow Depop's marketplace model
+
+On November 2, 2026 (Pacific), Wayne directed: “I want to be setup just like depop.” This supersedes the older request to permit replicas. Adopt Depop as the functional reference for Rack Relic's checkout, seller onboarding, shipping, returns and dispute experience, while identifying Rack Relic LLC as the operator. This is a target specification, not a claim of feature completion or Stripe approval.
+
+- Retain the prohibition on counterfeits, replicas and unauthorized copies, including disclosed replicas. Existing community guidelines and seller guide already state this. Listing reports and moderation need operational review; policy text alone does not establish enforcement.
+- Keep purchases on Rack Relic through Stripe-powered checkout. Target cards, Apple Pay and Google Pay where supported and verified for Rack Relic. Do not enable Klarna or other credit products solely because Depop offers them.
+- Use Stripe-hosted seller onboarding and private seller-to-provider account bindings. Require current provider eligibility before accepting a seller's orders; never infer approval from the onboarding return page. Rack Relic's business checking account receives platform funds; each seller must have their own supported payout setup.
+- Provide a compliant guardian path for under-18 sellers before enabling their paid sales. Do not collect a child's identity as if they were an independent adult, or expose identity/tax/bank documents in messages or listings.
+- Target tracked shipping, seller label access, buyer/seller order history and notifications. Define the payout release rule and dispute holds with the actual Stripe funds flow; do not represent shipping status alone as provider payout confirmation.
+- Target a 30-day purchase-date reporting window for non-delivery, damage or significantly-not-as-described claims, with evidence, seller response, support escalation and approved return instructions. Build and verify full-refund handling, fee/shipping/tax adjustments and post-transfer recovery before publishing a buyer-protection promise. Depop's protection program does not cover Rack Relic orders.
+- Preserve Rack Relic's existing proposed fee structure (4% item-only buyer fee, no fixed-dollar buyer fee, no seller platform fee, actual processing costs borne by seller) until a specific fee change is approved. This direction does not by itself replace Rack Relic's prices with Depop's.
+- Keep existing staging-only development boundaries. Live account activation, bank connection, live Stripe/Connect verification, production configuration and launch acceptance remain outstanding. No live payments or main merge are performed by this specification update.
+
+Acceptance evidence required: hosted seller onboarding/status and member isolation; compliant age/guardian eligibility; buyer checkout and verified payment webhook; inventory race protection; tracked shipping and private label delivery; seller settlement/payout and failure handling; returns/disputes and full/partial refunds before and after transfer; ledger/tax reconciliation; durable notifications; moderation/support operation; and production recovery checks. Automated checks are separate from hosted acceptance.
+
+Reference sources reviewed November 2, 2026:
+- Depop terms: https://depophelp.zendesk.com/hc/en-gb/articles/360001773148-Terms-of-Service
+- Prohibited items: https://depophelp.zendesk.com/hc/en-gb/articles/360001792167-What-are-Depop-s-prohibited-items
+- Buyer protection: https://depophelp.zendesk.com/hc/en-gb/articles/360038461713-Depop-Protection-for-buyers
+- Age requirements: https://depophelp.zendesk.com/hc/en-gb/articles/360001773088-How-old-do-I-have-to-be-to-use-Depop
+
 ## Decision and boundaries
 
 Start with a **Stripe Connect sandbox**, Stripe-hosted Checkout and hosted seller onboarding. Test one US seller, one US buyer, USD and one shippable listing per order. Use separate charges and transfers so a seller transfer can follow the agreed fulfillment rule rather than happen at checkout. This is a proposed funds flow, not an approved live provider arrangement. Test destination charges as an alternative if Stripe's account configuration or underwriting makes that preferable.
