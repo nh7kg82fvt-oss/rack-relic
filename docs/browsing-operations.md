@@ -14,6 +14,8 @@ Scope: public browsing, profiles, private drafts, photos, messages and reports. 
 
 Wayne is the owner contact at wayne@rackrelic.com. An assigned support/moderation schedule still needs owner confirmation. Review submitted listing reports in the existing private administration tools. A report is an allegation; check evidence and record the reason before acting. Preserve relevant messages and listing references privately. Do not automatically suspend a member based solely on a report.
 
+Review suspected counterfeits, unauthorized replicas and misleading brands in titles, brand fields, descriptions and tags, including names added only for exposure. Compare the listing text, photos and available evidence; an unfamiliar brand, low price or report alone does not establish a counterfeit. Record whether the concern is suspected authenticity, misleading branding or both. Request clarification or use existing moderation controls when supported by evidence; preserve the reason and listing reference privately. Do not claim automated authentication, blocking or removal without verified deployed controls.
+
 For an account concern, verify ownership through the existing account workflow. Never ask for a password or sign-in code by email. Privacy requests require a reviewed process; archiving is not erasure. Do not promise that changing a listing removes copies already seen by visitors.
 
 ## Backup and recovery evidence
