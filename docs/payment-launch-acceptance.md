@@ -1,0 +1,171 @@
+# Payment launch acceptance and evidence
+
+Prepared November 2, 2026 (Pacific). Baseline: draft PR #27, remote commit
+`dff3ce7be9b50bb1c2c95727fc08627e3a5f6de5`, tested source tree
+`04d73d1a6b92ac544a280b69bb7d349990a9a931`. This is an acceptance plan and
+read-only source/evidence audit, not a record of newly completed hosted tests.
+
+**Current recommendation: keep live marketplace payments closed.** The source
+has substantial local coverage, but the current 5% plus $0.50 flow is not yet
+installed and accepted end to end. Seller settlement and recovery, real delivery
+binding, tax workers and immediate operational alerts remain unfinished. The
+database deliberately prevents transfer/payout jobs from dispatching. Passing
+those hold tests is evidence that money stays held, not a completed seller payout.
+
+## Evidence rules
+
+- **Local covered** means a named test exercises source with PostgreSQL/PGlite
+  and/or synthetic provider transports. It is not a real provider acceptance.
+- **Recorded hosted** means an existing dated document records a matched sandbox
+  provider, signed event and application/database result. Retain the original
+  amount, version, order and receipt. Do not extrapolate it to later changes.
+- **Pending** or **not implemented** remains a launch blocker. Missing evidence
+  is unknown; a dashboard toggle, successful redirect, green deployment or AI
+  opinion cannot turn it into a pass.
+- Re-run acceptance on the exact installed revision. Record failures and partial
+  results too. Never discard an uncertain provider reference to obtain a pass.
+
+The latest recorded hosted checkout/refund evidence in
+[test-refund-acceptance.md](test-refund-acceptance.md) covers historical 4% orders,
+including an application-initiated partial/full refund cycle. The provider-backed
+risk guide records a separate $35.59 synthetic purchase, free marked sample
+label and full refund. These are useful baselines, not acceptance of the new
+5% plus $0.50 pricing, seller-cost consent or the new protection migrations.
+
+Current read-only verification in this chat confirmed that the connected Stripe
+account is the Rack Relic sandbox with `livemode=false`. The existing private
+setup endpoint returned `test:true`, database/Stripe connected and public
+checkout disabled. Its private configuration still reports seller onboarding
+and issue flags false, with sample labels, risk checks and informational tracking
+enabled. It does not expose the new protection/cost flags. These observations
+confirm the connection and deployment gap; they do not prove installation of
+new database migrations or current-price hosted acceptance.
+
+`tests/payment-journey-acceptance.test.cjs` now stitches the complete local
+migration chain to the real repository and seller/quote/Checkout/tax/fee/risk/
+refund adapters over synthetic provider transports. It verifies seller readiness
+and consent before one buyer payment, signed payment/refund replay, actual cost
+accounting, sticky issue/risk holds, a full refund and a lost Checkout response
+without a second payment. Seller payouts remain disabled; a refund does not
+recycle the startup allowance. This is local integration evidence only. The full
+local suite passed 557 checks after these journeys were added.
+
+## Resolve isolation before the next hosted transaction
+
+1. Read the installed migration list, exact Preview deployment/branch, runtime
+   flags, webhook subscriptions and existing fixture/order/job state. Do not
+   print secrets or raw customer data. Repository prose contains historical
+   deployment checkpoints; the current remote state needs fresh verification.
+2. Review and integrate the prepared changes deliberately. The runtime currently
+   accepts only Preview branch `test-only-marketplace-foundation`, the existing
+   isolated staging project and fixed Stripe sandbox. PR #27's own branch cannot
+   run the financial routes through that gate. A successful PR preview build does
+   not install its database changes or activate its checkout.
+3. Preserve the separate site-testing checkout and monitor. Do not change shared
+   staging behavior without coordinating the installation and test window. Use
+   the ordered dependencies in [private-preview-activation.md](private-preview-activation.md),
+   then the fee/cost additions in [fee-policy-and-seller-costs.md](fee-policy-and-seller-costs.md).
+   Inspect first; do not blindly reapply migrations or reset tables.
+4. The startup policy permits only **one unsettled order marketplace-wide** and
+   a **$100 complete order total**. Paid/refunded historical fixtures continue
+   to count; a refund does not automatically close their risk allowance. Existing
+   records may therefore block every new hosted scenario. Preserve them. Resolve
+   this through a separately reviewed isolated scenario environment or a reviewed
+   exposure/settlement closeout design, not direct deletion, changing a paid order
+   to failed, disabling triggers, broadening limits or fabricating a release.
+5. Before a new provider request, verify test keys/account/balance, authenticated
+   synthetic buyer and seller, participating operator access, selected fixture,
+   exact saved prices and permitted actions. Live keys and real card/bank details
+   are never acceptance fixtures. New fixture IDs are not permission to reset
+   old paid or uncertain records.
+
+No access failure, missing migration, unavailable operator role or existing
+unsettled claim should be worked around. Preserve the reference and identify
+the specific access, installation or reconciliation decision needed.
+
+## Acceptance matrix
+
+| Area | Existing local or recorded evidence | Evidence still required before live payments |
+| --- | --- | --- |
+| Environment and authorization | Runtime and repository tests reject production, other branches, live keys, foreign members, browser authority and cached identity. | Verify the installed revision, actual Preview protection, secret scope, browser/RPC denial, session loss and live/test isolation in the hosted environment. A staging participant-operator role is not a production-wide admin model. |
+| Seller onboarding and eligibility | Local durable creation/binding and fresh-read tests exist; all seller money remains disabled. Current test adapter uses legacy `/v1/accounts`, `type:express` and v1 readiness fields. | Complete hosted seller setup, incomplete/restricted/changed requirements and lost-creation recovery. Before new live adaptation, review Accounts v2 recipient configuration and the current capability path; do not infer live eligibility from legacy booleans or a return URL. Verify adult eligibility and final seller agreement; minor selling stays closed without its own verified guardian path. |
+| Current fees and seller consent | Versioned fee and SQL tests cover 5% plus $0.50 once/order, rounding, tax bases, immutable snapshots and historical 4% recovery/refunds. Cost service/database/UI tests bind exact authenticated consent. | Install additions and complete a fresh 5% plus $0.50 hosted quote, seller review/acceptance, buyer retry and receipt. On a $25 item, verify $1.75 buyer fee, plus the actual test shipping and tax. Missing/wrong hash, buyer acceptance, changed quote and old-order repricing must fail. Bundle arithmetic tests do not enable bundle checkout. |
+| Checkout and interruption | Local reservation, quote expiry, concurrent clicks, dispatch claims, known-session GET recovery and uncertain outcomes are covered. Historical successful hosted checkout is recorded. | Hosted decline, explicit 3DS failure, cancellation/expiry, duplicate click, reload and lost response on the current flow. An unpaid/cancel return must not create paid accounting, duplicate Checkout or release unresolved inventory. |
+| Signed payment and risk events | Local Node/generated Edge signature, identity, replay, ordering and dispute/early-warning hold tests exist. Historical paid/refund webhook delivery is recorded. | Deploy the matching receiver and read back only the required sandbox subscriptions. Show current order/session/PaymentIntent/event agreement, successful signed delivery, deduplication and retry/reconciliation for unbound or conflicting events. Test a hold arriving during dispatch. |
+| Startup exposure and seller holds | Local full-total, concurrent global claim, fresh seller verification, sticky issue/risk and saved-link recovery tests exist. | Hosted cap/concurrency/freshness tests without resetting old claims. Verify that stale/restricted sellers and open issues cannot create or resume app checkout. A previously obtained Stripe URL can still receive money; reconciliation/expiry must handle that exposure. |
+| Fraud and authentication | Local risk evaluator requires captured matching payment, normal risk, successful supported checks/authentication and no unresolved review; unknown evidence holds. Current chat records live Radar Plus, Adaptive 3DS and risk-aware CVC/postcode controls enabled. | Verify actual account rules/entitlements and test high/elevated risk, failed/missing checks, open reviews, 3DS success/failure/unsupported outcomes, wallets and changed destination. A review may follow a successful buyer charge; application fulfillment/settlement must remain held independently. Test checkout/card-attempt abuse limits beyond the existing quote budget. |
+| Carrier quote and label | Local order/destination/parcel binding, rate limits, budget checks and one durable label claim are covered. A marked sample-label provider run is recorded. | Current hosted quote/label access for the correct seller, expired/repriced shipping, uncertain purchase, provider error, changed address, adjustment and refund handling. Real postage and optional insurance must use approved actual quotes and costs; free sample labels are not valid postage. |
+| Tracking and delivery wait | Local informational sample tracking deduplicates/rejects stale/conflicting observations. Two-business-day Pacific calendar tests cover weekends, holidays and DST. | Implement authenticated real delivery ingestion/retrieval bound to the paid order, original destination and label. Test delayed, forged, duplicate, returned, conflicting and unmapped notices, then the waiting boundary. Sample `DELIVERED` cannot authorize settlement. Extend/review the bounded calendar before unsupported dates. |
+| Provider costs and seller proceeds | Local immutable original-charge evidence and new bounded reserve/actual allocation tests exist, including shared seller/month/source caps and balanced entries. | Verify the complete provider charge inventory, account-specific billing and accepted seller policy; ingest actual processing, screening, account/month, payout and selected insurance evidence. Include tax tooling, failed attempts, refunds/credits and unallocated costs. Reconcile seller net without consuming buyer tax, postage or platform fee. The runtime intentionally reports an incomplete schedule. |
+| Refund before transfer | Local amount/access/dispatch/replay/recovery and signed pending/failed/succeeded receipt accounting exist. Historical application partial/full refund and saved-request retrieval are recorded. | Complete current-price partial/full refund, lost HTTP/database response, replay/out-of-order event and pending/failed/canceled provider outcomes; preserve original request IDs. Reconcile fee, tax, postage and inventory decisions. A saved HTTP acknowledgement is not a confirmed refund. |
+| Transfer, payout and post-transfer refund | Transfer/payout execution, reversals, recovery and bank-failure workers are not implemented. The startup guard rejects dispatch/completion of money jobs. | Implement and sandbox-test one idempotent separate transfer after every gate, availability/reserve checks, lost response, duplicate events, payout pending/success/failure, account restriction, transfer reversal, partial/full refund after transfer and unrecoverable negative balance. Reconcile platform, connected balance and bank-payout evidence. No live seller money until this passes. |
+| Tax accounting | Test quote calculation and historical sandbox registration/calculation evidence exist. Tax-recording/refund-tax jobs remain held. | Resolve live marketplace obligations, registrations and item/buyer-fee/shipping tax classification. Implement and test transaction recording, partial/full refund reversals, ledger reconciliation and filing/remittance ownership. Calculated tax alone is not completed tax settlement or compliance. |
+| Support, disputes and notices | Local structured buyer issue, operator acknowledgment, seller response, refund-readiness and sticky dispute holds exist. Chat-assisted review is read-only. | Hosted participant isolation, deadline tracking, evidence/return/support procedure and production admin authority. Implement actual receipt/shipping/urgent notices with privacy and delivery-failure handling. Closed/won dispute, acknowledgment or clear score alone cannot remove all holds. |
+| Monitoring and operational readiness | Current chat setup monitor is every four hours; it can summarize accessible new cases and recommend actions. It cannot move money or supply continuous staffed coverage. | Test immediate verified provider alerts and durable holds, approximately 15-minute assisted flagged-case checks, alert delivery/failure, named urgent-response ownership and escalation. Faster cadence is a launch requirement, not currently running. Higher volume requires staffed response capacity. |
+| Funds, policies and launch approval | Draft seller rules and money-release blockers exist; no funded reserve is invented in source. The separate marketplace agreement remains held in this work. | Verify available Stripe/business funds against outstanding liabilities, define an affordable reserve/recovery rule, finalize clear fees/returns/dispute/eligibility terms and authenticated acceptance, and complete production configuration review. The owner makes the final marketplace-agreement and launch decisions; test success is not authorization. |
+
+## What a sandbox can establish
+
+Stripe sandbox payments use simulated funds and are not processed through card
+networks. Use Stripe test keys and official test payment methods for payment,
+refund, dispute and bank/payout simulations. Any displayed test fee is test
+accounting; simulated payments do not establish negotiated live pricing,
+recoverability, available real funds or live settlement timing. The real live
+Radar plan enrollment has its separately approved billing terms. Shipping test
+prices and sample labels likewise do not establish live postage or insurance
+costs. [Stripe sandboxes](https://docs.stripe.com/sandboxes),
+[testing](https://docs.stripe.com/testing),
+[testing Connect](https://docs.stripe.com/connect/testing)
+
+Stripe currently documents an Adaptive 3DS test card on its testing page, while
+the risk-control guide says the authentication fraud-prevention control is not
+available in testing environments. Verify account-specific test availability
+and record the result. Independently exercise explicit 3DS success, failure,
+attempt-only and unsupported outcomes through the supported test flow. Do not
+claim that a synthetic trigger proves the live adaptive model's effectiveness,
+future fraud loss, or conversion impact. Never substitute a fake live purchase
+with a real card to obtain test evidence. [Test fraud/authentication scenarios](https://docs.stripe.com/testing#fraud-prevention),
+[risk controls](https://docs.stripe.com/radar/risk-settings)
+
+## Local execution and hosted evidence record
+
+With the repository's supported Node runtime and dependencies installed:
+
+```sh
+npm test
+```
+
+Focused references for failures or changes (not a replacement for the full run):
+
+```sh
+node --test tests/fee-policy.test.cjs tests/fee-policy-sql.test.cjs tests/seller-costs-sql.test.cjs tests/test-seller-cost-service.test.cjs
+node --test tests/payment-journey-acceptance.test.cjs
+node --test tests/test-seller-protections.test.cjs tests/test-startup-policy.test.cjs tests/test-dispute-holds.test.cjs tests/test-edge-webhook.test.cjs
+node --test tests/test-checkout-flow.test.cjs tests/test-refund-dispatch.test.cjs tests/test-labels.test.cjs tests/test-tracking.test.cjs
+```
+
+For each hosted scenario save: scenario name, exact revision/environment,
+synthetic actor role, opaque order/request/event references, frozen financial
+components, provider mode/status, signed-delivery result, resulting order/ledger/
+job/hold state, observed time, pass/fail/unknown, and the evidence needed next.
+Store no secrets, authentication links, card data, bank details or full addresses
+in the acceptance report. A provider test event without the application's
+matching order/ledger effect is an incomplete result.
+
+## Recommendation sequence
+
+First complete installation/isolation and the current hosted buyer-to-refund
+journey. Then finish missing fulfillment, settlement/recovery, tax and immediate
+operational controls and test them as one coherent sandbox flow. Review live
+eligibility/configuration and owner obligations separately. Only after those
+gates pass should the owner consider a small invite-only real launch, retaining
+the approved risk limits and a visible stop switch. A single-unsettled-order
+pilot cannot support a broad high-volume buyer campaign; growth and limit
+changes require a separate evidence and funding review.
+
+Primary launch guidance:
+[Stripe go-live checklist](https://docs.stripe.com/get-started/checklist/go-live),
+[Connect recipient configuration](https://docs.stripe.com/connect/accounts-v2/connected-account-configuration),
+[separate charges and transfers](https://docs.stripe.com/connect/separate-charges-and-transfers),
+[marketplace refunds and disputes](https://docs.stripe.com/connect/marketplace/tasks/refunds-disputes),
+[webhook security and delivery](https://docs.stripe.com/webhooks).
