@@ -184,6 +184,24 @@
    const p=document.createElement('p');p.className='small';p.textContent=config.shippingMode==='shippo_test'?'Test prices received. New test checkouts calculate carrier prices separately for their destination. No postage was purchased.':'Test prices received. Checkout still uses simulated shipping. No postage was purchased.';$('shipping-test-results').append(p);
   }));$('shipping-test-controls').replaceChildren();$('shipping-test-controls').append(button);
  }
+ async function loadIssueReview(version,owner,authorization){
+  const current=()=>version===renderVersion&&owner===member&&authorization===token;
+  try{
+   const result=await api('issue-review',{},authorization);if(!current())return;
+   const labels={not_received:'Item not received',damaged:'Item arrived damaged',not_as_described:'Item significantly not as described'},uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+   const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v));
+   if(result?.test!==true||typeof result.hasMore!=='boolean'||!Array.isArray(result.issues)||result.issues.length>100||result.issues.some(r=>!uuid.test(r?.orderId||'')||!Object.hasOwn(labels,r.reason)||!date(r.reportedAt)||r.acknowledgedAt!==null&&!date(r.acknowledgedAt)))throw Error('Invalid report queue');
+   $('issue-review-rows').replaceChildren();
+   if(!result.issues.length){const p=document.createElement('p');p.textContent='No saved reports for your participating test orders.';$('issue-review-rows').append(p);}
+   for(const r of result.issues){
+    const card=document.createElement('article');card.className='order';const title=document.createElement('strong'),status=document.createElement('p'),ref=document.createElement('p');title.textContent=labels[r.reason];status.textContent=r.acknowledgedAt?'Acknowledged for follow-up — issue remains open.':'Awaiting operator acknowledgment';ref.textContent='Order '+r.orderId;ref.className='small';card.append(title,status,ref);
+    if(!r.acknowledgedAt){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='Acknowledge for follow-up';checkoutWidgets.push(disabled=>{b.disabled=disabled;});b.disabled=busy;
+     b.addEventListener('click',()=>operation(async auth=>{if(!current())return;const ack=await api('issue-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:r.orderId})},authorization);if(!current()||auth!==authVersion)return;if(ack?.test!==true||ack.orderId!==r.orderId||ack.acknowledged!==true||!date(ack.acknowledgedAt))throw Error('Acknowledgment needs confirmation. Refresh the queue.');await loadIssueReview(version,owner,authorization);if(current())note('Test report acknowledged for follow-up. The issue remains open and fulfillment stays held.');}));card.append(b);
+    }$('issue-review-rows').append(card);
+   }
+   if(result.hasMore){const p=document.createElement('p');p.textContent='Showing the first 100 reports. Additional records require review.';$('issue-review-rows').append(p);}
+  }catch{if(current()){const p=document.createElement('p');p.textContent='Report review is temporarily unavailable. Refresh orders to check again.';$('issue-review-rows').replaceChildren();$('issue-review-rows').append(p);}}
+ }
  async function loadRefundReview(version,owner,authorization){
   const current=()=>version===renderVersion&&owner===member&&authorization===token;
   try{
@@ -207,6 +225,7 @@
  async function orders(){
   const version=++renderVersion,owner=member,authorization=token;
   $('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();
+  $('issue-review').hidden=true;$('issue-review-rows').replaceChildren();
   $('refund-review').hidden=true;$('refund-review-rows').replaceChildren();
   const [result,access]=await Promise.all([api('orders',{},authorization),api('refund-access',{},authorization).catch(()=>null)]);
   if(version!==renderVersion||owner!==member||authorization!==token)return false;
@@ -215,6 +234,7 @@
   if(access?.test===true&&access.allowed===true){refunds=createTestRefundRequests({storage:localStorage,memberId:owner,request:(action,options)=>{if(owner!==member||authorization!==token)throw Error('Sign in again before checking this request');return api(action,options,authorization);}});}
   $('orders').replaceChildren();refundWidgets=[];checkoutWidgets=[];
   if(refunds)shippingPanel();
+  if(refunds&&config?.issueReviewEnabled===true){$('issue-review').hidden=false;void loadIssueReview(version,owner,authorization);}
   if(refunds){$('refund-review').hidden=false;void loadRefundReview(version,owner,authorization);}
   if(!rows.length){const p=document.createElement('p');p.textContent='No test orders yet.';$('orders').append(p);return true;}
   for(const o of rows){
@@ -276,7 +296,7 @@
  $('signin').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;busy=true;controls();try{
   const r=await fetch(config.projectUrl+'/auth/v1/token?grant_type=password',{method:'POST',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{apikey:config.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({email:$('email').value,password:$('password').value})});$('password').value='';const session=await r.json();if(!r.ok)throw Error('Sign-in failed. Try the email sign-in link instead.');await acceptSession(session);
  }catch(e){note(e.name==='TimeoutError'?'Sign-in did not respond. Please try again.':e.message);}finally{$('password').value='';busy=false;controls();}});
- $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];checkoutWidgets=[];sessionStorage.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();$('refund-review').hidden=true;$('refund-review-rows').replaceChildren();$('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();note('Signed out of the private test area.');controls();});
+ $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];checkoutWidgets=[];sessionStorage.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();$('issue-review').hidden=true;$('issue-review-rows').replaceChildren();$('refund-review').hidden=true;$('refund-review-rows').replaceChildren();$('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();note('Signed out of the private test area.');controls();});
  $('refresh').addEventListener('click',()=>operation(async version=>{await orders();if(version===authVersion)note('Orders refreshed from the test database.');}));
  $('checkout').addEventListener('click',()=>operation(async version=>{
   const key=checkoutKey(member);let orderId=savedCheckout(member);
