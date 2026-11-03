@@ -43,6 +43,20 @@
   try{await action(version);}catch(e){if(version===authVersion)note(e.name==='TimeoutError'?'The request timed out. Keep the saved reference and check its status.':e.message);}
   finally{if(version===authVersion){busy=false;controls();}}
  }
+ function issuePanel(card,o){
+  if(config?.orderIssuesEnabled!==true||o.buyer_id!==member||!['paid','review'].includes(o.state))return;
+  const owner=member,authorization=token,version=renderVersion;
+  const current=()=>owner===member&&authorization===token&&version===renderVersion;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');
+  summary.textContent='Report a test order problem';status.textContent='Save a test report for review. This does not issue a refund, notify support or create buyer protection.';section.append(summary,status);
+  let recorded=false;
+  const labels={not_received:'Item not received',damaged:'Item arrived damaged',not_as_described:'Item significantly not as described'},buttons=[];
+  const show=r=>{if(r?.test!==true||r.orderId!==o.id||!['not_reported','review_required'].includes(r.state)||r.state==='review_required'&&(!Object.hasOwn(labels,r.reason)||!Number.isFinite(Date.parse(r.reportedAt))))throw Error('Report status needs review');if(r.state==='review_required'){recorded=true;status.textContent='Test report saved: '+labels[r.reason]+'. Review required. No refund has been issued.';for(const b of buttons)b.disabled=true;}else status.textContent='No report saved for this test order.';};
+  const action='order-issue&orderId='+encodeURIComponent(o.id);
+  function add(label,reason){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;buttons.push(b);checkoutWidgets.push(disabled=>{b.disabled=disabled||recorded&&!!reason;});
+   b.addEventListener('click',()=>operation(async auth=>{const existing=await api(action,{},authorization);if(!current()||auth!==authVersion)return;show(existing);if(!reason||existing.state==='review_required')return;const r=await api(action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})},authorization);if(!current()||auth!==authVersion)return;show(r);}));section.append(b);}
+  add('Check saved report');for(const [reason,label] of Object.entries(labels))add(label,reason);card.append(section);
+ }
  function refundPanel(card,o,client){
   const section=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Operator test refund';section.append(summary);
   const explain=document.createElement('p');explain.className='small';explain.textContent='Sandbox only. Refund confirmation comes from Stripe’s signed notice. Fulfillment stays on hold.';section.append(explain);
@@ -214,6 +228,7 @@
      if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
     }card.append(refund);
    }
+   issuePanel(card,o);
    if(refunds)refundPanel(card,o,refunds);
    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
    if(refunds)fulfillmentPanel(card,o);

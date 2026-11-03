@@ -1,4 +1,5 @@
 'use strict';
+const {createTestIssueHandler}=require('./test_issue_handler.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const {createTestOrderRepository,OrderAccessDenied}=require('./test_order_repository.cjs');
 const {createTestQuoteService,createTestCheckoutService}=require('./test_checkout_service.cjs');
@@ -52,7 +53,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
   if(action==='config'&&req.method==='GET'){
    const publishable=env.RACK_RELIC_TEST_SUPABASE_PUBLISHABLE_KEY;
    if(!configured||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishable||'')){send(503,{test:true,error:'Private test checkout is being prepared'});return;}
-   send(200,{test:true,sellerOnboardingEnabled:env.RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED==='true',projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',trackingEnabled:env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
+   send(200,{test:true,orderIssuesEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true',sellerOnboardingEnabled:env.RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED==='true',projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',trackingEnabled:env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
   }
   if(!configured){send(503,{error:'Private test checkout unavailable'});return;}
   try{
@@ -60,6 +61,7 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
    if(['refund','refund-access','refund-review','fee','shipping-quote','fulfillment','sample-label','risk','tracking'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
    const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators});
+   if(action==='order-issue'){await createTestIssueHandler({repository,enabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true'})(req,res);return;}
    if(action==='seller-onboarding'){
     if(env.RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED!=='true'){send(404,{error:'Not found'});return;}
     const sellers=createTestSellerOnboarding({repository,secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
