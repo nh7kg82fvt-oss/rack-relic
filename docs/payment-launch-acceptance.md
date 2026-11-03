@@ -1,8 +1,8 @@
 # Payment launch acceptance and evidence
 
 Prepared November 2, 2026 (Pacific). Baseline: draft PR #27, baseline remote commit
-`c637a03d790718e73cc0101713a3c4b4b9c3637c`, tested source tree
-`3e5a2e09a38c09246b4f2e5f1163870fa0cc17a3`. This is an acceptance plan and
+`0701b186e27af0a6c92dc1c354c6e66dcc2f1303`, tested source tree
+`5d77c55af0fffe12c600c68e62bb65ab953c37b1`. This is an acceptance plan and
 read-only source/evidence audit, not a record of newly completed hosted tests.
 
 **Current recommendation: keep live marketplace payments closed.** The source
@@ -55,7 +55,9 @@ settlement, shipping and limit comparison work brings the current full local
 suite to 653 passing checks, including test bank failure, returned-funds
 recovery, signed-refund races and lost-ID reconciliation without another POST.
 The subsequent Accounts v2 onboarding update brings the full local total to 657
-passing checks, with no failures. Hosted provider acceptance remains pending.
+passing checks, with no failures. The cloud case queue/outbox addition brings
+the latest full suite to 673 passing checks. These are local database/service
+checks; hosted provider acceptance and actual alert delivery remain pending.
 See [sandbox settlement and recovery](sandbox-settlement-recovery.md).
 
 ## Resolve isolation before the next hosted transaction
@@ -135,7 +137,7 @@ that either ceiling is affordable or protects the business from losses.
 | Transfer, payout and post-transfer refund | Sandbox-only adapters, durable simulation requests and a separate balanced simulation ledger now test transfers, standard payouts, verified bank returns, reversals, signed-refund races and lost-ID retrieval. The entire accepted cost ceiling is retained; unused reserve remains owed to the seller. Normal money jobs still reject dispatch/completion. | Install and run the current hosted simulation with a verified test seller, manual schedule and test bank. Then finish live settlement, final unused-reserve settlement, partial-refund allocation, funded post-bank-payout refunds and unrecoverable debt/recovery policy. Reconcile actual provider costs, platform/connected balances and payout evidence. Test bank connection and platform funds must be verified separately. No live seller money until this passes. |
 | Tax accounting | Test quote calculation and historical sandbox registration/calculation evidence exist. Tax-recording/refund-tax jobs remain held. | Resolve live marketplace obligations, registrations and item/buyer-fee/shipping tax classification. Implement and test transaction recording, partial/full refund reversals, ledger reconciliation and filing/remittance ownership. Calculated tax alone is not completed tax settlement or compliance. |
 | Support, disputes and notices | Local structured buyer issue, operator acknowledgment, seller response, refund-readiness and sticky dispute holds exist. Chat-assisted review is read-only. | Hosted participant isolation, deadline tracking, evidence/return/support procedure and production admin authority. Implement actual receipt/shipping/urgent notices with privacy and delivery-failure handling. Closed/won dispute, acknowledgment or clear score alone cannot remove all holds. |
-| Monitoring and operational readiness | Current chat setup monitor is every four hours; it can summarize accessible new cases and recommend actions. It cannot move money or supply continuous staffed coverage. | Test immediate verified provider alerts and durable holds, approximately 15-minute assisted flagged-case checks, alert delivery/failure, named urgent-response ownership and escalation. Faster cadence is a launch requirement, not currently running. Higher volume requires staffed response capacity. |
+| Monitoring and operational readiness | The local setup monitor remains every four hours. An enabled hourly cloud website monitor gates readiness checks to every four hours; initial cloud HTTP checks passed, while autonomous timer dispatch and live private access remain unverified. New source tests case/deadline outbox, pagination, leases and delivery gaps without a scheduler or transport. None supplies continuous staffed coverage or financial authority. | Install and verify the case/outbox schema, actual cloud dispatch, authenticated live case access and notification delivery/reconciliation. Test immediate verified provider alerts and durable holds, approximately 15-minute assisted flagged-case checks, alert delivery/failure, named urgent-response ownership and escalation. Faster cadence is a launch requirement, not currently running. Higher volume requires staffed response capacity. |
 | Funds, policies and launch approval | Draft seller rules and money-release blockers exist; no funded reserve is invented in source. The separate marketplace agreement remains held in this work. | Verify available Stripe/business funds against outstanding liabilities, define an affordable reserve/recovery rule, finalize clear fees/returns/dispute/eligibility terms and authenticated acceptance, and complete production configuration review. The owner makes the final marketplace-agreement and launch decisions; test success is not authorization. |
 
 ## What a sandbox can establish
@@ -174,6 +176,7 @@ Focused references for failures or changes (not a replacement for the full run):
 ```sh
 node --test tests/fee-policy.test.cjs tests/fee-policy-sql.test.cjs tests/seller-costs-sql.test.cjs tests/test-seller-cost-service.test.cjs
 node --test tests/payment-journey-acceptance.test.cjs tests/shipping-journey-acceptance.test.cjs
+node --test tests/cloud-case-alerts-sql.test.cjs
 node --test tests/settlement-simulation-sql.test.cjs tests/stripe-test-settlement.test.cjs tests/settlement-service.test.cjs tests/settlement-runtime.test.cjs tests/startup-limit-options.test.cjs
 node --test tests/test-seller-protections.test.cjs tests/test-startup-policy.test.cjs tests/test-dispute-holds.test.cjs tests/test-edge-webhook.test.cjs
 node --test tests/test-checkout-flow.test.cjs tests/test-refund-dispatch.test.cjs tests/test-labels.test.cjs tests/test-tracking.test.cjs

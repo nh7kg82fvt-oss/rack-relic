@@ -31,6 +31,27 @@ escalation. The current setup monitor remains every four hours; the faster
 cadence has not been activated while payments are closed. Higher transaction
 volume requires staffed urgent response; periodic AI checks cannot supply it.
 
+## Cloud migration checkpoint
+
+The local four-hour setup check remains available during cutover. A separate
+ChatGPT cloud monitor has been saved and enabled for hourly public website
+checks, with readiness/case checks gated to every four hours. Initial read-only
+cloud HTTP checks passed. The saved schedule is not evidence that a later timer
+has dispatched successfully; autonomous execution verification remains pending.
+Live Stripe access, private cases and runtime logs are not yet available through
+verified cloud connections. Do not substitute sandbox results or a local Chrome
+session, and do not claim complete Mac-independent dispute coverage.
+
+The additive [case queue and alert outbox](cloud-case-alerts.md) now has local
+PostgreSQL coverage for case changes, retained deadlines, bounded pagination,
+leases, retry/reconciliation and delivery gaps. It is source only. A cloud
+scheduler, verified notification transport, authorized case reader and hosted
+acceptance still need installation. Database acknowledgment is distinct from
+provider delivery and from the owner reading an alert. No financial authority
+or live readiness follows from a successful queue read. Keep the overlapping
+local checks until the replacement's actual dispatch and required access are
+confirmed; the fifteen-minute live-case requirement remains unresolved.
+
 The current approved starting limit is $200 for the complete buyer order,
 including fee, shipping and tax, with one unsettled order marketplace-wide.
 The earlier $100 policy is historical. A $300 proposal is tested only in a

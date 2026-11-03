@@ -32,6 +32,8 @@ owner-approved $200 ceiling proves that the business reserve is sufficient.
 
 12. `supabase/test/20261103_settlement_simulation.sql` after step 11 adds separate sandbox transfer/payout/recovery requests and accounting. Normal release guards remain. Read [sandbox settlement and recovery](sandbox-settlement-recovery.md) before activation; no real bank or live money is used.
 
+13. `supabase/test/20261103_cloud_case_alerts.sql` after the provider-risk schema in step 7 adds private case heads, a minimal paginated queue and a durable alert outbox. Its backfill preserves verified history and existing financial holds. Read [cloud case alerts](cloud-case-alerts.md). This does not configure a scheduler, notification transport, production case access or delivery. Inspect and verify these separately before claiming cloud alert coverage.
+
 Verify new tables have RLS enabled and anon/authenticated roles cannot invoke their RPCs or read their tables. Server-only RPCs accept actor IDs only from freshly verified server authentication. Never expose the Supabase server key in the browser, repository or chat.
 
 ## Enable only the matching preview features
