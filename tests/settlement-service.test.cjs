@@ -18,7 +18,7 @@ const MIGRATIONS=['20261030_order_ledger','20261030_payment_recovery','20261030_
  '20261030_checkout_quote_limits','20261030_checkout_quote_refresh','20261031_cancel_preparation','20261031_refund_review','20261031_charge_fee_evidence',
  '20261031_fulfillment_snapshots','20261031_label_attempts','20261031_tracking_observations','20261102_seller_onboarding','20261102_order_issues',
  '20261102_order_issues_review','20261102_order_issues_thread','20261102_order_issues_review_refunds','20261103_seller_protections',
- '20261103_provider_risk_holds','20261103_startup_policy','20261103_startup_limit_200','20261103_fee_policy_v2','20261103_seller_costs','20261103_settlement_simulation'];
+ '20261103_provider_risk_holds','20261103_startup_policy','20261103_startup_limit_200','20261103_fee_policy_v2','20261103_seller_costs','20261103_settlement_simulation','20261103_refund_provider_inventory'];
 let db;const rpc=(name,args)=>db.query('select public.'+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') x',args).then(r=>r.rows[0].x);
 before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const n of MIGRATIONS)await db.exec(fs.readFileSync(require.resolve('../supabase/test/'+n+'.sql'),'utf8'));});
 after(async()=>db?.close());

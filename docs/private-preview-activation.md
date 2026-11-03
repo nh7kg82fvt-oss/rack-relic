@@ -43,6 +43,8 @@ owner-approved $200 ceiling proves that the business reserve is sufficient.
 
 14. `supabase/test/20261103_admin_overview.sql` after step 13 adds a read-only service-role projection for the single configured participating owner. Browser roles are denied. Read [private owner overview](private-admin-overview.md); another refund operator is not an admin owner.
 
+15. `supabase/test/20261103_refund_provider_inventory.sql` after the installed refund-request schema and current dispatch guards adds a private completed-refund baseline to new dispatch claims. The matching server checks Stripe's complete charge-scoped refund inventory before a new refund POST. Read [refund inventory safety](refund-provider-inventory.md). Existing records and settlement fences remain; this does not enable live refunds or provide their funding policy.
+
 Verify new tables have RLS enabled and anon/authenticated roles cannot invoke their RPCs or read their tables. Server-only RPCs accept actor IDs only from freshly verified server authentication. Never expose the Supabase server key in the browser, repository or chat.
 
 ## Enable only the matching preview features

@@ -13,7 +13,7 @@ const snap={test:true,orderId:order,listingId:listing,sellerId:seller,currency:'
 let db;
 const defs={rr_test_refund_review:['p_actor'],rr_test_prepare_refund:['p_request','p_order','p_actor','p_amount'],rr_test_get_refund_request:['p_request','p_actor'],rr_test_dispatch_refund:['p_request','p_actor'],rr_test_save_refund:['p_request','p_actor','p_refund','p_charge'],rr_test_process_refund_receipt:['p_event','p_payload_hash','p_type','p_refund','p_payment_intent','p_charge','p_amount','p_currency','p_status','p_created','p_request']};
 const rpc=async(name,p)=>(await db.query('select public.'+name+'('+defs[name].map((_,i)=>'$'+(i+1)).join(',')+') as result',defs[name].map(k=>p[k]))).rows[0].result;
-before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const f of ['order_ledger','payment_recovery','checkout_attempts','refund_receipts','refund_requests'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261030_'+f+'.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261031_refund_review.sql'),'utf8'));});
+before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const f of ['order_ledger','payment_recovery','checkout_attempts','refund_receipts','refund_requests'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261030_'+f+'.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261031_refund_review.sql'),'utf8'));await db.exec(fs.readFileSync(require.resolve('../supabase/test/20261103_refund_provider_inventory.sql'),'utf8'));});
 after(async()=>db?.close());
 beforeEach(async()=>{
  await db.exec('truncate rr_sandbox.catalog cascade');
@@ -27,7 +27,7 @@ function signed(refund=refundObject(),patch={}){
  const event={id:'evt_refund',type:'refund.created',livemode:false,created:Math.floor(Date.now()/1000)-10,data:{object:refund},...patch},rawBody=Buffer.from(JSON.stringify(event)),t=Math.floor(Date.now()/1000);
  return {rawBody,signature:'t='+t+',v1='+createHmac('sha256','whsec_fixture').update(t+'.').update(rawBody).digest('hex'),webhookSecret:'whsec_fixture'};
 }
-function setup({dbFailure,onPost,refundPatch,identityPatch,paymentPatch,chargePatch,headers,repositoryOptions={}}={}){
+function setup({dbFailure,onPost,refundPatch,identityPatch,paymentPatch,chargePatch,headers,refundInventory={object:'list',has_more:false,data:[]},inventoryHeaders,repositoryOptions={}}={}){
  const calls=[];
  const repository=createTestOrderRepository({projectUrl:project,serviceKey:'sb_secret_fixture',allowedMemberIds:[buyer,seller],allowedRefundOperatorIds:[seller],refundsEnabled:true,refundRequestsEnabled:true,...repositoryOptions,fetchImpl:async(url,opts)=>{
   calls.push({url,method:opts.method});
@@ -42,8 +42,13 @@ function setup({dbFailure,onPost,refundPatch,identityPatch,paymentPatch,chargePa
   if(url.endsWith('/v1/balance'))return Response.json({livemode:false});
   if(url.endsWith('/v1/payment_intents/pi_fixture'))return Response.json({id:'pi_fixture',livemode:false,status:'succeeded',currency:'usd',amount:3427,amount_received:3427,metadata:{order_id:order},transfer_group:'rr_test_'+order,latest_charge:'ch_fixture',...paymentPatch});
   if(url.endsWith('/v1/charges/ch_fixture'))return Response.json({object:'charge',id:'ch_fixture',payment_intent:'pi_fixture',livemode:false,status:'succeeded',paid:true,captured:true,disputed:false,refunded:false,currency:'usd',amount:3427,amount_captured:3427,amount_refunded:0,...chargePatch});
+  if(new URL(url).pathname==='/v1/refunds'&&opts.method==='GET'){
+   assert.equal(new URL(url).searchParams.get('charge'),'ch_fixture');
+   assert.equal(new URL(url).searchParams.get('limit'),'100');
+   return Response.json(refundInventory,{headers:inventoryHeaders});
+  }
   if(url.endsWith('/v1/refunds')){await onPost?.(repository);return Response.json(refundObject(refundPatch),{headers});}
-  if(url.endsWith('/v1/refunds/re_fixture'))return Response.json(refundObject(refundPatch),{headers});
+  if(url.endsWith('/v1/refunds/'+(refundPatch?.id??'re_fixture')))return Response.json(refundObject(refundPatch),{headers});
   throw Error('Unexpected request');
  }});
  return {calls,repository,stripe,service:createTestRefundService({repository,stripe})};
@@ -52,6 +57,84 @@ const posts=calls=>calls.filter(c=>c.url==='https://api.stripe.com/v1/refunds'&&
 const requestRow=async()=>(await db.query('select * from rr_sandbox.refund_requests where id=$1',[rid])).rows[0];
 const orderRow=async()=>(await db.query('select * from rr_sandbox.orders where id=$1',[order])).rows[0];
 const ledger=async()=>(await db.query('select count(*)::int as count,sum(amount_cents)::int as balance from rr_sandbox.ledger_entries')).rows[0];
+
+test('an already pending provider refund blocks a second refund before another POST',async()=>{
+ const x=setup({refundInventory:{object:'list',has_more:false,data:[refundObject({id:'re_externalPending',status:'pending',metadata:{}})]}});
+ await assert.rejects(x.service.start(input));
+ assert.equal(posts(x.calls).length,0);
+ assert.equal((await orderRow()).refunded_cents,0);
+ assert.deepEqual(await ledger(),{count:5,balance:0});
+});
+test('required-action, malformed, duplicate, cached or incomplete provider inventory never permits a refund POST',async()=>{
+ const external=refundObject({id:'re_external',metadata:{}});
+ const cases=[
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'requires_action'}]}},
+  {refundInventory:{object:'list',has_more:true,data:[]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed'},{...external,status:'failed'}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',charge:'ch_other'}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',payment_intent:'pi_other'}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',currency:'eur'}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',livemode:true}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',amount:0}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'failed',transfer_reversal:'trr_other'}]}},
+  {refundInventory:{object:'list',has_more:false,data:[{...external,status:'unrecognized'}]}},
+  {refundInventory:{object:'list',has_more:false,data:Array.from({length:101},(_,i)=>({...external,id:'re_'+i,status:'failed'}))}},
+  {inventoryHeaders:{age:'1'}},{inventoryHeaders:{'cf-cache-status':'HIT'}}
+ ];
+ for(const config of cases){
+  await db.exec('truncate rr_sandbox.refund_requests');
+  const x=setup(config);await assert.rejects(x.service.start(input));
+  assert.equal(posts(x.calls).length,0);assert.equal((await requestRow()).phase,'dispatched');
+  await assert.rejects(x.service.start(input),RefundPending);assert.equal(posts(x.calls).length,0);
+ }
+});
+test('a provider partial refund absent from the signed database baseline pauses a new refund',async()=>{
+ const x=setup({chargePatch:{amount_refunded:100},refundInventory:{object:'list',has_more:false,data:[refundObject({id:'re_external',amount:100,metadata:{}})]}});
+ await assert.rejects(x.service.start(input),/totals require reconciliation/);
+ assert.equal(posts(x.calls).length,0);assert.equal((await orderRow()).refunded_cents,0);
+});
+test('unrelated failed and canceled refund attempts do not consume the buyer refund allowance',async()=>{
+ const x=setup({refundInventory:{object:'list',has_more:false,data:[refundObject({id:'re_oldFailed',status:'failed',metadata:{}}),refundObject({id:'re_oldCanceled',status:'canceled',metadata:{}})]}});
+ await x.service.start(input);assert.equal(posts(x.calls).length,1);assert.equal((await requestRow()).phase,'known');
+ assert.deepEqual(await ledger(),{count:5,balance:0});
+});
+test('a confirmed partial refund can be followed by the exact remaining amount only after both inventories agree',async()=>{
+ const first=setup();await first.service.start(input);await first.repository.acceptStripeEvent(signed());
+ const x=setup({chargePatch:{amount_refunded:1000},refundInventory:{object:'list',has_more:false,data:[refundObject()]},
+  refundPatch:{id:'re_remaining',amount:2427,metadata:{integration:'rack_relic_test_refund',request_id:rid2,order_id:order}}});
+ const remaining={...input,requestId:rid2,amountCents:2427};await x.service.start(remaining);
+ assert.equal(posts(x.calls).length,1);assert.equal((await orderRow()).refunded_cents,1000);
+ await x.repository.acceptStripeEvent(signed(refundObject({id:'re_remaining',amount:2427,metadata:{integration:'rack_relic_test_refund',request_id:rid2,order_id:order}}),{id:'evt_remaining',type:'refund.updated'}));
+ assert.equal((await orderRow()).refunded_cents,3427);assert.deepEqual(await ledger(),{count:9,balance:0});
+ await x.service.start(remaining);assert.equal(posts(x.calls).length,1);
+});
+test('missing or mismatched prior provider receipts cannot be replaced by the same aggregate total',async()=>{
+ const first=setup();await first.service.start(input);await first.repository.acceptStripeEvent(signed());
+ const inventories=[[],[refundObject({id:'re_substitute'})],[refundObject({amount:999})],[refundObject({status:'failed'})]];
+ for(const data of inventories){
+  await db.query('delete from rr_sandbox.refund_requests where id=$1',[rid2]);
+  const x=setup({chargePatch:{amount_refunded:1000},refundInventory:{object:'list',has_more:false,data}});
+  await assert.rejects(x.service.start({...input,requestId:rid2,amountCents:2427}));assert.equal(posts(x.calls).length,0);
+  assert.equal((await orderRow()).refunded_cents,1000);assert.deepEqual(await ledger(),{count:7,balance:0});
+ }
+});
+test('signed pending refunds stop database dispatch and preserve its prepared request and holds',async()=>{
+ const x=setup({refundPatch:{status:'pending'}});await x.service.start(input);await x.repository.acceptStripeEvent(signed(refundObject({status:'pending'})));
+ await assert.rejects(x.service.start({...input,requestId:rid2,amountCents:500}));
+ const q=await x.repository.getRefundRequest({authorization:input.authorization,requestId:rid2});
+ assert.equal(q.phase,'prepared');assert.equal(posts(x.calls).length,1);
+ assert.equal((await orderRow()).refund_pending_cents,1000);assert.deepEqual(await ledger(),{count:5,balance:0});
+});
+test('the new baseline is server-only and an absent installation cannot fall back to aggregate-only refunds',async()=>{
+ const x=setup();await x.repository.prepareRefund(input);const q=(await x.repository.dispatchRefund(input)).request;
+ assert.deepEqual(q.refund_baseline,[]);const n=x.calls.length;
+ for(const refund_baseline of [undefined,null,[{id:'re_bad',amount_cents:1}],[{id:'re_bad',charge_id:'ch_fixture',amount_cents:0}],[{id:'re_bad',charge_id:'ch_fixture',amount_cents:3000}]])
+  await assert.rejects(x.stripe.createRefund({...q,refund_baseline}));
+ assert.equal(x.calls.length,n);
+ const grants=(await db.query("select has_function_privilege('service_role','rr_sandbox.rr_test_dispatch_refund(uuid,uuid)','EXECUTE') old_access,has_function_privilege('service_role','public.rr_test_dispatch_refund(uuid,uuid)','EXECUTE') new_access")).rows[0];
+ assert.deepEqual(grants,{old_access:false,new_access:true});
+ await db.exec('set role authenticated');try{await assert.rejects(db.query('select rr_sandbox.rr_test_dispatch_refund($1,$2)',[rid,seller]),/permission denied/);}finally{await db.exec('reset role');}
+});
 
 test('authenticated request is frozen before one POST and never books money from the HTTP response',async()=>{
  const x=setup({onPost:async()=>assert.equal((await requestRow()).phase,'dispatched')});

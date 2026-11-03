@@ -9,7 +9,7 @@ const {createHmac}=require('node:crypto');
 const A=TEST_ENVIRONMENTS.acceptance,L=TEST_ENVIRONMENTS.legacy;
 const O='11111111-1111-4111-8111-111111111111',R='22222222-2222-4222-8222-222222222222';
 const order={test:true,orderId:O,paymentIntentId:'pi_acceptance',totalCents:3427};
-const request={id:R,order_id:O,payment_intent_id:'pi_acceptance',amount_cents:1000,total_cents:3427,phase:'dispatched',refund_id:null};
+const request={id:R,order_id:O,payment_intent_id:'pi_acceptance',amount_cents:1000,total_cents:3427,phase:'dispatched',refund_id:null,refund_baseline:[]};
 function provider(config={}){
  const calls=[],metadata={order_id:O,rr_test_environment:A.id};
  const fetchImpl=async(url,options)=>{
@@ -21,6 +21,7 @@ function provider(config={}){
   if(u.pathname==='/v1/charges/ch_acceptance')data={object:'charge',id:'ch_acceptance',payment_intent:'pi_acceptance',livemode:false,status:'succeeded',paid:true,captured:true,refunded:false,amount_refunded:0,disputed:false,currency:'usd',amount:3427,amount_captured:3427,metadata,balance_transaction:'txn_acceptance',outcome:{type:'authorized',risk_level:'normal'},payment_method_details:{type:'card',card:{checks:{cvc_check:'pass',address_postal_code_check:'pass',address_line1_check:'pass'},three_d_secure:{result:'authenticated'}}}};
   if(u.pathname==='/v1/balance_transactions/txn_acceptance')data={object:'balance_transaction',id:'txn_acceptance',source:'ch_acceptance',currency:'usd',amount:3427,fee:129,net:3298,type:'charge',reporting_category:'charge',status:'available',exchange_rate:null,fee_details:[{type:'stripe_fee',amount:129,currency:'usd'}]};
   if(u.pathname==='/v1/refunds'||u.pathname==='/v1/refunds/re_acceptance')data={object:'refund',id:'re_acceptance',payment_intent:'pi_acceptance',charge:'ch_acceptance',amount:1000,currency:'usd',status:'succeeded',metadata:{integration:'rack_relic_test_refund_acceptance_v1',request_id:R,order_id:O,rr_test_environment:A.id}};
+  if(u.pathname==='/v1/refunds'&&options.method==='GET')data={object:'list',has_more:false,data:[]};
   assert.ok(data,'unexpected synthetic request '+u.pathname);if(config.patch)data=config.patch(structuredClone(data),u,options)||data;
   return Response.json(data,{headers:config.headers});
  };
@@ -43,6 +44,18 @@ test('acceptance evidence rejects foreign/live/cached identity and legacy paymen
   {patch:(d,u)=>u.pathname.startsWith('/v1/payment_intents/')?{...d,metadata:{order_id:O}}:d}
  ]){const p=provider(config),client=create({secretKey:'sk_test_fixture',accountId:A.accountId,fetchImpl:p.fetchImpl});await assert.rejects(run(kind,client));assert.equal(p.calls.some(c=>c.options.method==='POST'),false);}
  for(const [,create]of factories)for(const accountId of [undefined,'acct_foreign'])assert.throws(()=>create({secretKey:'sk_test_fixture',accountId,fetchImpl:()=>assert.fail('unapproved provider')}));
+});
+test('the refund adapter freezes its database baseline before an asynchronous provider read',async()=>{
+ const q={...request,refund_baseline:[]};
+ const p=provider({patch(d,u){
+  if(u.pathname==='/v1/account')q.refund_baseline.push({id:'re_late',charge_id:'ch_acceptance',amount_cents:1000});
+  if(u.pathname==='/v1/charges/ch_acceptance')return {...d,amount_refunded:1000};
+  if(u.pathname==='/v1/refunds')return {object:'list',has_more:false,data:[{object:'refund',id:'re_late',charge:'ch_acceptance',payment_intent:'pi_acceptance',amount:1000,currency:'usd',status:'succeeded'}]};
+  return d;
+ }});
+ const client=createStripeTestRefundClient({secretKey:'rk_test_fixture',accountId:A.accountId,fetchImpl:p.fetchImpl});
+ await assert.rejects(client.createRefund(q),/totals require reconciliation/);
+ assert.equal(q.refund_baseline.length,1);assert.equal(p.calls.some(c=>c.options.method==='POST'),false);
 });
 test('acceptance signed external refunds and disputes remain reference-bound without invented app metadata',()=>{
  const now=Math.floor(Date.now()/1000),sign=e=>{const raw=Buffer.from(JSON.stringify(e));return {raw,sig:'t='+now+',v1='+createHmac('sha256','whsec_fixture').update(now+'.').update(raw).digest('hex')};};

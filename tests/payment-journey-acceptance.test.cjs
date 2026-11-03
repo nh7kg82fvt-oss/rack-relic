@@ -34,7 +34,7 @@ const MIGRATIONS=['20261030_order_ledger','20261030_payment_recovery','20261030_
  '20261031_label_attempts','20261031_tracking_observations','20261102_seller_onboarding','20261102_order_issues',
  '20261102_order_issues_review','20261102_order_issues_thread','20261102_order_issues_review_refunds',
  '20261103_seller_protections','20261103_provider_risk_holds','20261103_startup_policy',
- '20261103_fee_policy_v2','20261103_seller_costs'];
+ '20261103_fee_policy_v2','20261103_seller_costs','20261103_refund_provider_inventory'];
 let db;
 const rpc=(name,args)=>db.query('select public.'+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') x',args).then(r=>r.rows[0].x);
 before(async()=>{
@@ -100,6 +100,7 @@ function harness({loseCheckoutResponse=false}={}){
    payment_method_details:{type:'card',card:{checks:{cvc_check:'pass',address_line1_check:'pass',address_postal_code_check:'pass'},three_d_secure:{result:'authenticated'}}}});
   if(path==='/v1/balance_transactions/txn_journey')return Response.json({object:'balance_transaction',id:'txn_journey',source:'ch_journey',amount:3502,currency:'usd',fee:132,net:3370,
    type:'charge',reporting_category:'charge',status:'available',exchange_rate:null,fee_details:[{type:'stripe_fee',amount:132,currency:'usd'}]});
+  if(path==='/v1/refunds'&&options.method==='GET')return Response.json({object:'list',has_more:false,data:[]});
   if(path==='/v1/refunds'&&options.method==='POST'){
    const f=new URLSearchParams(options.body);assert.equal(f.get('amount'),'3502');assert.equal(f.get('payment_intent'),'pi_journey');
    refund={object:'refund',id:'re_journey',livemode:false,amount:3502,currency:'usd',payment_intent:'pi_journey',charge:'ch_journey',status:'succeeded',metadata:{integration:'rack_relic_test_refund',request_id:R,order_id:O}};return Response.json(refund);
