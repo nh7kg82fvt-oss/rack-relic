@@ -70,11 +70,34 @@ not authorize release or prove that all accounting is resolved.
 
 ## Fees and customer rights
 
-The existing proposal remains a 4% buyer fee on item price and actual payment
-processing costs borne by the seller. Shipping and tax are separate. This draft
-does not introduce a seller subscription, change fee allocation or authorize a
-paid fraud product. Final disclosures must show the applicable fees and seller
-earnings before the relevant commitment.
+The owner-approved buyer platform fee for new orders is 5% of the item or combined bundle price, plus $0.50 once per order. A $25 item
+therefore has a $1.75 platform fee; a bundle pays the fixed amount only once.
+The buyer also pays actual shipping and applicable tax separately. Rack Relic
+retains its platform fee for support, hosting, operations and reserves.
+
+The seller bears actual payment processing and clearly disclosed, agreed
+provider costs attributable to the seller's sales, including any selected extra
+insurance. Examples can include attributable fraud screening, connected-account
+and payout charges, subject to the final cost schedule. A monthly account cost
+must be allocated only once to the applicable seller and billing period; it is
+not a new charge on every item. Shared, unverified or unallocated costs cannot
+silently reduce the seller's earnings.
+
+Show the seller the applicable cost schedule, estimated earnings and any cost
+reservation before the relevant commitment, record authenticated agreement to
+its exact version, and reconcile actual provider evidence before releasing the
+remaining earnings. Estimates do not establish a settled cost. Additional
+insurance must be selected and agreed with its quoted cost before purchase.
+Unknown costs or insufficient seller proceeds require a hold and review, not a
+hidden deduction from the buyer fee, shipping funds or collected tax.
+
+No seller subscription or paid fraud upgrade is introduced by this draft. The
+buyer pays the approved $0.50 fixed component once per order, including bundles. Existing saved orders keep their original fee and
+cost snapshot; a new fee policy cannot retrospectively reprice a payment.
+Neither the retained platform fee nor passing through known costs guarantees
+profit: refunds, unrecoverable disputes and other operating expenses can still
+reduce Rack Relic's earnings. This proposed allocation is not yet active seller
+acceptance or a production payment flow.
 
 Rack Relic does not promise Depop's protection program, insurance, guaranteed
 recovery or zero losses. Final policies must preserve applicable customer

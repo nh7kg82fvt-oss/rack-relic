@@ -2,6 +2,7 @@
 // Server-only test foundation. No public route, production configuration,
 // inventory writes, transfers, refund issuance or live credentials are supported.
 const {createHmac, timingSafeEqual, createHash}=require('node:crypto');
+const {LEGACY_FEE_POLICY,CURRENT_FEE_POLICY,feePolicy,buyerFee}=require('./fee_policy.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SESSION=/^cs_test_[A-Za-z0-9]+$/;
 const STRIPE_VERSION='2026-10-28.endive';
@@ -18,17 +19,20 @@ function quote(value,orderId,now){
 }
 // Input must come from a trusted server snapshot after reservation, never a
 // request body. This validator does NOT implement authentication or a DB lock.
-function buildTestOrderBase({orderId,buyerId,listing,shippingQuote},now=Date.now()){
+function buildTestOrderBase({orderId,buyerId,listing,shippingQuote,feePolicyVersion=LEGACY_FEE_POLICY},now=Date.now()){
   uuid(orderId);uuid(buyerId);uuid(listing?.id);uuid(listing?.seller_id);
   if(!Number.isSafeInteger(now)||buyerId===listing.seller_id||listing.status!=='published'||listing.moderation_status!=='active')throw Error('Listing is not eligible');
   if(!['shipping','both'].includes(listing.delivery_mode))throw Error('Initial test checkout supports US shipping only');
   const itemCents=cents(listing.price_cents);if(itemCents<100)throw Error('Invalid item price');
   if(shippingQuote?.listingId!==listing.id||shippingQuote?.listingUpdatedAt!==listing.updated_at||typeof listing.updated_at!=='string'||!Number.isFinite(Date.parse(listing.updated_at)))throw Error('Shipping quote does not match the listing version');
   const shippingCents=quote(shippingQuote,orderId,now);cents(shippingCents,100000);
-  const buyerFeeCents=Math.floor((itemCents*4+50)/100);
+  // Missing tags occur only on legacy saved quotes. Current reservations carry
+  // their immutable v2 policy; never reprice an existing v1 order on retry.
+  const buyerFeeCents=buyerFee(itemCents,feePolicyVersion);
   const taxableTotalCents=itemCents+buyerFeeCents+shippingCents;
   return Object.freeze({test:true,orderId,listingId:listing.id,sellerId:listing.seller_id,
-    currency:'USD',itemCents,buyerFeeCents,shippingCents,baseCents:taxableTotalCents});
+    currency:'USD',itemCents,buyerFeeCents,shippingCents,baseCents:taxableTotalCents,
+    ...(feePolicyVersion===CURRENT_FEE_POLICY?{feePolicyVersion}:{})});
 }
 function buildTestCheckout(input,now=Date.now()){
   const base=buildTestOrderBase(input,now),{taxQuote}=input;
@@ -48,7 +52,7 @@ function validatePersistedSnapshot(snapshot){
   uuid(snapshot.orderId);uuid(snapshot.listingId);uuid(snapshot.sellerId);
   for(const key of ['itemCents','buyerFeeCents','taxCents'])cents(snapshot[key]);
   cents(snapshot.shippingCents,100000);cents(snapshot.totalCents,30000000);
-  if(snapshot.itemCents<100||snapshot.buyerFeeCents!==Math.floor((snapshot.itemCents*4+50)/100)||snapshot.totalCents!==snapshot.itemCents+snapshot.buyerFeeCents+snapshot.shippingCents+snapshot.taxCents)throw Error('Invalid persisted test total');
+  if(snapshot.itemCents<100||snapshot.buyerFeeCents!==buyerFee(snapshot.itemCents,snapshot.feePolicyVersion===undefined?LEGACY_FEE_POLICY:snapshot.feePolicyVersion)||snapshot.totalCents!==snapshot.itemCents+snapshot.buyerFeeCents+snapshot.shippingCents+snapshot.taxCents)throw Error('Invalid persisted test total');
 }
 function validateSession(data,snapshot,expectedId){
   if(data?.livemode!==false||!SESSION.test(data.id)||expectedId&&data.id!==expectedId||data.mode!=='payment'||data.currency!=='usd'||data.amount_total!==snapshot.totalCents||data.client_reference_id!==snapshot.orderId||data.metadata?.integration!=='rack_relic_test'||data.metadata?.order_id!==snapshot.orderId)throw Error('Stripe test response does not match the order');
@@ -74,8 +78,10 @@ function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,re
       const form=new URLSearchParams({mode:'payment',integration_identifier:INTEGRATION_IDENTIFIER,'adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:returnOrigin+'/api/test-marketplace?view=return&session_id={CHECKOUT_SESSION_ID}',cancel_url:returnOrigin+'/api/test-marketplace?view=cancel',client_reference_id:snapshot.orderId,
         'metadata[order_id]':snapshot.orderId,'metadata[integration]':'rack_relic_test',
         'payment_intent_data[metadata][order_id]':snapshot.orderId,'payment_intent_data[transfer_group]':'rr_test_'+snapshot.orderId});
+      const policy=feePolicy(snapshot.feePolicyVersion);
+      const feeLabel='Buyer platform fee ('+policy.percent+'%'+(policy.fixedCents?' + $'+(policy.fixedCents/100).toFixed(2)+' per order':'')+')';
       let index=0;
-      for(const [name,amount] of [['Test item',snapshot.itemCents],['Buyer platform fee (4%)',snapshot.buyerFeeCents],['US test shipping',snapshot.shippingCents],['Test tax',snapshot.taxCents]]){
+      for(const [name,amount] of [['Test item',snapshot.itemCents],[feeLabel,snapshot.buyerFeeCents],['US test shipping',snapshot.shippingCents],['Test tax',snapshot.taxCents]]){
         if(amount===0)continue;
         const key='line_items['+(index++)+']';
         form.set(key+'[quantity]','1');form.set(key+'[price_data][currency]','usd');form.set(key+'[price_data][unit_amount]',String(amount));form.set(key+'[price_data][product_data][name]',name);

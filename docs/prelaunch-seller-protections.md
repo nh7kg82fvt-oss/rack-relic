@@ -59,7 +59,7 @@ These are explicit blockers, not completed features or promises to customers:
    invented funded balance or automatic bank-debit authorization here.
 6. **Financial and operational acceptance.** Finish tax recording/reversal,
    real shipping, evidence exchange, support ownership and dispute deadlines.
-   Reconcile fees, refunds and seller net; fees are unchanged by this PR.
+   Reconcile fees, refunds and seller net. New orders use the owner-approved buyer fee of 5% plus $0.50 once per order, including bundles; preserve original saved-order financial snapshots.
 7. **Final approval.** Confirm live provider eligibility and account-specific
    obligations, then obtain explicit agreement acceptance and a separate live
    launch decision. Staging success alone cannot authorize production.
@@ -131,9 +131,24 @@ No paid Radar upgrade, subscription, additional service, bank transfer or
 insurance purchase is enabled. Prefer included provider fraud checks and
 manual operator review for the pilot, after verifying actual account access
 and pricing. Ordinary payment, Connect, tax and shipping costs still need to
-be accounted for; no free-processing or profitability claim is made. Keep
-existing fees unchanged. No private owner/bank balance is stored in source or
-treated as verified available Stripe funds. The reserve gate remains closed.
+be accounted for; no free-processing or profitability claim is made. The owner
+approved a buyer platform fee of 5% of item or combined bundle price plus $0.50 once
+per order for new orders, including bundles. Actual shipping and tax remain buyer-paid. Sellers bear
+actual processing and clearly disclosed, agreed provider costs attributable to
+their sales, including any selected extra insurance. Rack Relic retains its
+platform fee for support, hosting, operations and reserves. This allocation
+requires exact-version seller agreement, itemized disclosure and verified
+provider-cost evidence before earnings can be released. Shared or unknown costs
+and insufficient seller proceeds keep release held; they cannot be hidden in
+the buyer fee, shipping or tax. Monthly seller-account costs must not be charged
+once per item or more than once per seller/billing period. Neither fee retention
+nor cost pass-through guarantees profit or covers every unrecoverable loss.
+
+Current public and private-preview fee copy describes the new 5% plus $0.50-per-order policy; it does
+not enable checkout or prove seller acceptance. Historical saved financial
+snapshots must remain immutable. No private owner/bank balance is stored in
+source or treated as verified available Stripe funds. The reserve gate remains
+closed.
 
 The holiday calendar follows the [OPM schedule](https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/)
 for 2026–2027, including December 31, 2027's observed New Year's holiday. Review

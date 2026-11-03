@@ -137,6 +137,42 @@
    }));
   }
  }
+ function sellerCostPanel(card,o){
+  if(config?.sellerCostsEnabled!==true||o.seller_id!==member)return;
+  const owner=member,authorization=token,version=renderVersion,current=()=>version===renderVersion&&owner===member&&authorization===token;
+  const section=document.createElement('section'),heading=document.createElement('h3'),status=document.createElement('p'),sale=document.createElement('p'),cost=document.createElement('p'),net=document.createElement('p'),maximum=document.createElement('p');
+  heading.textContent='Your test sale payment costs';status.textContent='Review one payment processing and handling total before accepting its maximum. This private test consent is not the final live seller agreement. Seller funds stay held.';
+  sale.textContent='Sale price: pending review';cost.textContent='Payment processing and handling: pending confirmation';net.textContent='Estimated payout: pending confirmation';maximum.hidden=true;section.append(heading,status,sale,cost,net,maximum);
+  const details=document.createElement('details'),summary=document.createElement('summary'),breakdown=document.createElement('div');summary.textContent='Payment cost details';details.append(summary,breakdown);section.append(details);
+  const check=document.createElement('button'),prepare=document.createElement('button'),accept=document.createElement('button'),consent=document.createElement('input'),label=document.createElement('label');
+  for(const b of [check,prepare,accept]){b.type='button';b.className='secondary';}check.textContent='Review payment costs';prepare.textContent='Prepare test cost quote';accept.textContent='Accept maximum test payment costs';prepare.hidden=accept.hidden=label.hidden=true;
+  consent.type='checkbox';consent.id='seller-cost-consent-'+o.id;label.htmlFor=consent.id;label.append(consent);const agreement=document.createElement('span');agreement.textContent=' I accept the maximum payment costs shown for this private test order only.';label.append(agreement);section.append(check,prepare,label,accept);card.append(section);
+  let latest=null;
+  const allowed=action=>{try{RackRelicSellerCostReview.sellerCostAction(action,latest,o.id);return true;}catch{return false;}};
+  const disable=disabled=>{check.disabled=disabled;prepare.disabled=disabled||!allowed('seller-cost-prepare');consent.disabled=disabled||!allowed('seller-cost-accept');accept.disabled=disabled||!consent.checked||!allowed('seller-cost-accept');};checkoutWidgets.push(disable);consent.addEventListener('change',()=>disable(busy));
+  function show(r){
+   latest=r;consent.checked=false;breakdown.replaceChildren();maximum.hidden=!r.disclosure;
+   const unavailable=r.blockers.includes('unsupported_fee_policy')||r.blockers.includes('invalid_order_snapshot');
+   sale.textContent=r.itemCents===null?'Sale price: pending review':'Sale price: '+money(r.itemCents);
+   const estimateKnown=r.sellerNetAfterReserveCents!==null&&r.blockers.every(k=>['seller_cost_acceptance_required','provider_costs_unconfirmed'].includes(k));
+   cost.textContent='Payment processing and handling: '+(estimateKnown?money(r.confirmedCostCents+r.reservedCostCents)+(r.reservedCostCents?' (includes reserved costs; actual costs pending)':' (confirmed costs)'):'pending confirmation');
+   net.textContent='Estimated payout: '+(estimateKnown?money(r.sellerNetAfterReserveCents)+' — held; no bank payout is enabled':'pending confirmation — seller funds remain held');
+   status.textContent=unavailable?'Payment cost acceptance is unavailable for this historical or invalid order. Its saved amounts are unchanged. Seller funds remain held.':r.accepted?'Private test cost consent is recorded. Final live terms and release checks remain outstanding. No seller payment was made.':'Private test consent only. Review the maximum below before accepting. Final live terms remain under review. Seller funds stay held.';
+   const add=text=>{const p=document.createElement('p');p.className='small';p.textContent=text;breakdown.append(p);};
+   add('Confirmed payment costs so far: '+money(r.confirmedCostCents)+'. Reserved for unconfirmed costs: '+money(r.reservedCostCents)+'. Pending costs are not treated as zero.');
+   if(r.buyerFeeCents!==null)add('Platform fee paid separately by the buyer: '+money(r.buyerFeeCents)+'. This is not an additional seller commission.');
+   if(r.disclosure){maximum.textContent='Maximum payment processing and handling for this test order: '+money(r.disclosure.maxTotalCents)+'. Unused reserved amounts must be reconciled.';for(const [kind,text] of Object.entries(RackRelicSellerCostReview.COST_LABELS))add(text+': up to '+money(r.disclosure.costCaps[kind])+(kind==='insurance'?(r.disclosure.selectedInsurance?' (selected for this test quote)':' (not selected)'):'')+'.');add('The total maximum applies alongside each individual cost limit. Accepting this quote does not buy insurance, move money or enable a payout.');}
+   for(const blocker of r.blockers)add(RackRelicSellerCostReview.BLOCKERS[blocker]);
+   prepare.hidden=!allowed('seller-cost-prepare');accept.hidden=label.hidden=!allowed('seller-cost-accept');disable(busy);
+  }
+  async function read(){try{return RackRelicSellerCostReview.publicSellerCostReview(await api('seller-cost-review&orderId='+encodeURIComponent(o.id),{},authorization),o.id);}catch(e){if(current()){latest=null;consent.checked=false;prepare.hidden=accept.hidden=label.hidden=maximum.hidden=true;cost.textContent='Payment processing and handling: pending confirmation';net.textContent='Estimated payout: pending confirmation — seller funds remain held';disable(true);}throw e;}}
+  check.addEventListener('click',()=>operation(async auth=>{if(!current())return;const r=await read();if(!current()||auth!==authVersion)return;show(r);}));
+  prepare.addEventListener('click',()=>operation(async auth=>{if(!current())return;const r=await read();if(!current()||auth!==authVersion)return;show(r);if(!allowed('seller-cost-prepare'))return;const request=RackRelicSellerCostReview.sellerCostAction('seller-cost-prepare',r,o.id);const result=await api(request.action,request.options,authorization);if(!current()||auth!==authVersion)return;show(RackRelicSellerCostReview.publicSellerCostReview(result,o.id));}));
+  accept.addEventListener('click',()=>{
+   if(!current()||!consent.checked||!allowed('seller-cost-accept'))return;const reviewedHash=latest.disclosure.hash;
+   return operation(async auth=>{if(!current())return;const r=await read();if(!current()||auth!==authVersion)return;show(r);if(r.accepted)return;if(r.disclosure?.hash!==reviewedHash)throw Error('Payment cost details changed. Review the new maximum before accepting.');const request=RackRelicSellerCostReview.sellerCostAction('seller-cost-accept',r,o.id);const result=await api(request.action,request.options,authorization);if(!current()||auth!==authVersion)return;const accepted=RackRelicSellerCostReview.publicSellerCostReview(result,o.id);show(accepted);if(!accepted.accepted||accepted.disclosure?.hash!==reviewedHash)throw Error('Test cost consent needs confirmation. Review the saved quote before trying again.');});
+  });
+ }
  function protectionPanel(card,o){
   if(config?.sellerProtectionsEnabled!==true)return;
   const owner=member,authorization=token,version=renderVersion,current=()=>version===renderVersion&&owner===member&&authorization===token;
@@ -287,7 +323,7 @@
      if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
     }card.append(refund);
    }
-   issuePanel(card,o);issueThreadPanel(card,o);
+   issuePanel(card,o);issueThreadPanel(card,o);sellerCostPanel(card,o);
    if(refunds){refundPanel(card,o,refunds);issueRefundReviewPanel(card,o,refunds);}
    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
    if(refunds)protectionPanel(card,o);
@@ -349,7 +385,7 @@
   config=await api('config');$('fixture-title').textContent=config.listing?.title||'Synthetic test jacket';
   if(config.shippingMode==='shippo_test'){
    $('test-intro').textContent='Use your existing staging account. This separate test area uses a synthetic jacket, Shippo test shipping prices and Stripe’s test tax calculation. Nothing here purchases real postage or pays a seller.';
-   $('shipping-caption').textContent='Buyer fee: $1.00 · Shipping calculated by Shippo in test mode. Tax calculated for the Seattle test destination below.';
+   $('shipping-caption').textContent='Buyer fee: $1.75 · Shipping calculated by Shippo in test mode. Tax calculated for the Seattle test destination below.';
    $('shipping-test-description').textContent='Checks Shippo with a separate synthetic 10 × 8 × 2 inch, 1 lb parcel from Seattle to New York. These prices may differ from live prices and from the destination-specific quote used in a checkout. No postage is purchased.';
   }
   emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
