@@ -6,6 +6,7 @@ const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
 const {publicTrackingStatus}=require('./test_tracking_service.cjs');
 const {RESPONSES,publicIssueThread}=require('./test_issue_thread.cjs');
 const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
+const {publicProtectionReview}=require('../test-protection-review.js');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -42,6 +43,9 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   return f?.test===true&&f.orderId===orderId&&/^pi_[A-Za-z0-9]+$/.test(f.paymentIntentId||'')&&/^ch_[A-Za-z0-9]+$/.test(f.chargeId||'')&&/^txn_[A-Za-z0-9]+$/.test(f.balanceTransactionId||'')&&f.currency==='USD'&&Number.isSafeInteger(f.grossCents)&&f.grossCents>0&&f.grossCents<=30000000&&(total===undefined||f.grossCents===total)&&(pi===undefined||f.paymentIntentId===pi)&&Number.isSafeInteger(f.feeCents)&&f.feeCents>=0&&f.feeCents<=f.grossCents&&Number.isSafeInteger(f.netCents)&&f.netCents===f.grossCents-f.feeCents&&Number.isSafeInteger(f.checkedAt)&&Array.isArray(f.feeDetails)&&f.feeDetails.length<=20&&f.feeDetails.every(d=>['stripe_fee','tax'].includes(d?.type)&&d.currency==='USD'&&Number.isSafeInteger(d.amountCents)&&d.amountCents>=0)&&f.feeDetails.reduce((n,d)=>n+d.amountCents,0)===f.feeCents;
  }
  return Object.freeze({
+  async protectionReview({authorization,orderId}){id(orderId);const actor=await refundOperator(authorization);return publicProtectionReview(await rpc('rr_test_protection_review',{p_actor:actor,p_order:orderId}),orderId);},
+  async holdSeller({authorization,orderId,reason}){id(orderId);const actor=await refundOperator(authorization);if(!['suspicious_activity','delivery_problem','verification_problem'].includes(reason))throw new OrderAccessDenied('Invalid hold reason');const r=await rpc('rr_test_hold_seller',{p_actor:actor,p_order:orderId,p_reason:reason});if(r?.test!==true||r.orderId!==orderId||r.held!==true||r.releaseEnabled!==false)throw new OrderServiceUnavailable('Seller hold unavailable');return {test:true,orderId,held:true,releaseEnabled:false};},
+  async recordSellerProtection({authorization,accountId,ready,checkedAt}){const actor=await member(authorization);if(!/^acct_[A-Za-z0-9]+$/.test(accountId||'')||typeof ready!=='boolean'||!Number.isSafeInteger(checkedAt))throw new OrderServiceUnavailable('Invalid seller evidence');const r=await rpc('rr_test_record_seller_protection',{p_actor:actor,p_account:accountId,p_ready:ready,p_checked:checkedAt});if(r?.test!==true||r.recorded!==true)throw new OrderServiceUnavailable('Seller verification not recorded');return {test:true,recorded:true};},
   async issueRefundReview({authorization,orderId}){id(orderId);const actor=await refundOperator(authorization);return publicIssueRefundReview(await rpc('rr_test_issue_refund_review',{p_actor:actor,p_order:orderId}),orderId);},
   async reviewOrderIssues({authorization}){
    const actor=await refundOperator(authorization),rows=await rpc('rr_test_issue_review',{p_actor:actor});

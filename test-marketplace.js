@@ -137,6 +137,16 @@
    }));
   }
  }
+ function protectionPanel(card,o){
+  if(config?.sellerProtectionsEnabled!==true)return;
+  const owner=member,authorization=token,version=renderVersion,current=()=>version===renderVersion&&owner===member&&authorization===token;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),list=document.createElement('ul');summary.textContent='Seller payment protections';status.textContent='Seller money stays held. Check the requirements still needed before release.';section.append(summary,status,list);
+  const check=document.createElement('button');check.type='button';check.className='secondary';check.textContent='Check protection holds';checkoutWidgets.push(disabled=>{check.disabled=disabled;});section.append(check);
+  check.addEventListener('click',()=>operation(async auth=>{if(!current())return;const value=await api('protection-review&orderId='+encodeURIComponent(o.id),{},authorization);if(!current()||auth!==authVersion)return;const r=RackRelicProtectionReview.publicProtectionReview(value,o.id);list.replaceChildren();for(const reason of r.blockers){const item=document.createElement('li');item.textContent=RackRelicProtectionReview.BLOCKERS[reason];list.append(item);}status.textContent='Seller money is held. No transfer or bank payout was created.';}));
+  const label=document.createElement('label'),reason=document.createElement('select'),hold=document.createElement('button');reason.id='seller-hold-'+o.id;label.htmlFor=reason.id;label.textContent='Reason to stop further test sales';for(const [key,text] of Object.entries({suspicious_activity:'Suspicious activity',delivery_problem:'Delivery problem',verification_problem:'Verification problem'})){const option=document.createElement('option');option.value=key;option.textContent=text;reason.append(option);}hold.type='button';hold.className='secondary';hold.textContent='Hold seller for review';checkoutWidgets.push(disabled=>{hold.disabled=disabled;reason.disabled=disabled;});section.append(label,reason,hold);
+  hold.addEventListener('click',()=>operation(async auth=>{if(!current())return;const r=await api('protection-hold',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:o.id,reason:reason.value})},authorization);if(!current()||auth!==authVersion)return;if(r?.test!==true||r.orderId!==o.id||r.held!==true||r.releaseEnabled!==false)throw Error('Hold needs confirmation. Keep seller funds on hold.');status.textContent='Seller held for review. Further test sales are blocked. Refreshing verification cannot clear this hold.';}));
+  card.append(section);
+ }
  function riskPanel(card,o){
   if(config.riskCheckEnabled!==true)return;
   const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),button=document.createElement('button');summary.textContent='Test payment risk check';
@@ -280,6 +290,7 @@
    issuePanel(card,o);issueThreadPanel(card,o);
    if(refunds){refundPanel(card,o,refunds);issueRefundReviewPanel(card,o,refunds);}
    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
+   if(refunds)protectionPanel(card,o);
    if(refunds)fulfillmentPanel(card,o);
    if(refunds)sampleLabelPanel(card,o);
    if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
