@@ -22,7 +22,13 @@
  const REQUIRED=['live_acceptance_pending','real_delivery_unverified','delivery_wait_unverified','seller_terms_pending','platform_reserve_unconfigured','tax_recovery_unverified','settlement_unavailable'];
  function publicProtectionReview(v,orderId){
   if(!v||v.test!==true||v.orderId!==orderId||v.state!=='held'||v.releaseEnabled!==false||v.transferCreated!==false||v.payoutCreated!==false||!Array.isArray(v.blockers)||v.blockers.length>Object.keys(BLOCKERS).length||new Set(v.blockers).size!==v.blockers.length||v.blockers.some(k=>!Object.hasOwn(BLOCKERS,k))||REQUIRED.some(k=>!v.blockers.includes(k)))throw Error('Protection review unavailable; seller funds remain held');
-  return {test:true,orderId,state:'held',blockers:[...v.blockers],releaseEnabled:false,transferCreated:false,payoutCreated:false};
+  let policy;
+  if(v.policy!==undefined){
+   const p=v.policy;
+   if(p?.version!=='startup-v1'||p.maxOrderCents!==10000||p.maxUnsettledOrders!==1||p.maxUnsettledGrossCents!==10000||p.minBusinessDaysAfterDelivery!==2||p.automaticRelease!==false)throw Error('Startup policy needs review; seller funds remain held');
+   policy={version:'startup-v1',maxOrderCents:10000,maxUnsettledOrders:1,maxUnsettledGrossCents:10000,minBusinessDaysAfterDelivery:2,automaticRelease:false};
+  }
+  return {test:true,orderId,state:'held',blockers:[...v.blockers],releaseEnabled:false,transferCreated:false,payoutCreated:false,...(policy?{policy}:{})};
  }
  return Object.freeze({BLOCKERS,publicProtectionReview});
 });

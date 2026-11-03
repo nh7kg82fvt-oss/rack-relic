@@ -11,7 +11,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[]}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const project=url.hostname.split('.')[0];
  if(!/^[a-z0-9]{20}$/.test(project)||url.hostname!==project+'.supabase.co'||project===PRODUCTION_PROJECT||url.protocol!=='https:'||url.port||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -197,7 +197,7 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   },
   async acceptStripeEvent({rawBody,signature,webhookSecret,nowSeconds}){
    const event=verifyStripeTestEvent(rawBody,signature,{secret:webhookSecret,...(nowSeconds===undefined?{}:{nowSeconds})});
-   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true});
+   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true,disputesEnabled:disputesEnabled===true});
    return rpc(name,payload);
   },
   // Assessment must come from evaluateTestCharge with freshly fetched Stripe data.

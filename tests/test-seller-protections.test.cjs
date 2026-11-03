@@ -11,7 +11,7 @@ let db;
 const rpc=(name,args)=>db.query('select public.'+name+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') x',args).then(r=>r.rows[0].x);
 before(async()=>{
  db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');
- for(const name of ['20261030_order_ledger','20261030_payment_recovery','20261030_checkout_attempts','20261030_refund_receipts','20261030_refund_requests','20261030_checkout_quote_limits','20261030_checkout_quote_refresh','20261031_cancel_preparation','20261031_refund_review','20261031_charge_fee_evidence','20261031_fulfillment_snapshots','20261031_label_attempts','20261031_tracking_observations','20261102_seller_onboarding','20261102_order_issues','20261102_order_issues_review','20261102_order_issues_thread','20261102_order_issues_review_refunds','20261103_seller_protections'])await db.exec(fs.readFileSync('supabase/test/'+name+'.sql','utf8'));
+ for(const name of ['20261030_order_ledger','20261030_payment_recovery','20261030_checkout_attempts','20261030_refund_receipts','20261030_refund_requests','20261030_checkout_quote_limits','20261030_checkout_quote_refresh','20261031_cancel_preparation','20261031_refund_review','20261031_charge_fee_evidence','20261031_fulfillment_snapshots','20261031_label_attempts','20261031_tracking_observations','20261102_seller_onboarding','20261102_order_issues','20261102_order_issues_review','20261102_order_issues_thread','20261102_order_issues_review_refunds','20261103_seller_protections','20261103_provider_risk_holds'])await db.exec(fs.readFileSync('supabase/test/'+name+'.sql','utf8'));
 });
 after(async()=>db?.close());
 beforeEach(async()=>{
@@ -115,4 +115,26 @@ test('seller protection writes come from authenticated seller plus bound fresh p
 });
 test('projection rejects fabricated release permission, unknown/missing blockers and strips private fields',async()=>{
  await paid();const value=await review();for(const patch of [{releaseEnabled:true},{payoutCreated:true},{state:'ready'},{test:false},{blockers:[]},{blockers:[...value.blockers,'injected']},{blockers:[...value.blockers,value.blockers[0]]}])assert.throws(()=>publicProtectionReview({...value,...patch},O));assert.equal(publicProtectionReview({...value,secret:'private'},O).secret,undefined);
+});
+const riskNotice=(event='evt_dispute',hash='c'.repeat(64),type='charge.dispute.created',status='needs_response',pi='pi_fixture')=>rpc('rr_test_process_risk_notice',[event,hash,type,type.startsWith('radar.')?'issfr_fixture':'du_fixture','ch_fixture',pi,type.startsWith('radar.')?null:3100,type.startsWith('radar.')?null:'usd',type.startsWith('radar.')?'warning_received':status,type.startsWith('radar.')?null:Math.floor(Date.now()/1000)+86400,Math.floor(Date.now()/1000)]);
+test('provider disputes hold paid orders and further seller claims without inventing ledger debits',async()=>{
+ await paid();const ledger=(await db.query('select jsonb_agg(l order by kind) x from rr_sandbox.ledger_entries l')).rows[0].x;
+ assert.equal((await riskNotice()).state,'held');assert.equal((await riskNotice()).duplicate,true);
+ await assert.rejects(riskNotice('evt_dispute','d'.repeat(64)),/collision/);
+ assert.equal((await db.query('select risk_status from rr_sandbox.orders where id=$1',[O])).rows[0].risk_status,'blocked');
+ assert.deepEqual((await db.query('select jsonb_agg(l order by kind) x from rr_sandbox.ledger_entries l')).rows[0].x,ledger);
+ const r=await additional();await assert.rejects(reserve(r.order,r.listing),/issue review/);
+ assert.equal((await db.query('select count(*)::int n from rr_sandbox.provider_risk_notices')).rows[0].n,1);
+});
+test('closed/won notices and out-of-order fraud alerts never automatically clear a hold',async()=>{
+ await paid();await riskNotice();await riskNotice('evt_won','d'.repeat(64),'charge.dispute.closed','won');
+ await riskNotice('evt_warning','e'.repeat(64),'radar.early_fraud_warning.created');
+ assert.equal((await db.query('select risk_status from rr_sandbox.orders where id=$1',[O])).rows[0].risk_status,'blocked');assert.equal((await review()).releaseEnabled,false);
+ assert.equal((await db.query('select count(*)::int n from rr_sandbox.provider_risk_notices')).rows[0].n,3);
+});
+test('unbound or conflicting provider notices roll back and browser roles cannot forge risk holds',async()=>{
+ await paid();await assert.rejects(riskNotice('evt_unknown','c'.repeat(64),'charge.dispute.created','needs_response','pi_unbound'),/binding required/);
+ await assert.rejects(riskNotice('evt_noPI','c'.repeat(64),'charge.dispute.created','needs_response',null),/binding required/);
+ assert.equal((await db.query('select count(*)::int n from rr_sandbox.provider_risk_notices')).rows[0].n,0);
+ for(const role of ['anon','authenticated']){await db.exec('set role '+role);await assert.rejects(riskNotice(),/permission denied/);await assert.rejects(db.query('select * from rr_sandbox.provider_risk_notices'),/permission denied/);await db.exec('reset role');}
 });

@@ -19,6 +19,8 @@ Inspect existing staging migration state first. Do not blindly reapply earlier c
 4. `supabase/test/20261102_order_issues_thread.sql` after step 3.
 5. `supabase/test/20261102_order_issues_review_refunds.sql` after step 3 and the existing installed refund-request schema.
 6. `supabase/test/20261103_seller_protections.sql` after the above plus existing charge-fee, fulfillment, label and tracking migrations. This immediately enforces seller-verification and exposure gates; follow [protection activation](prelaunch-seller-protections.md) before applying it. Do not reset historical orders or assume disabling its UI flag removes its database guards.
+7. `supabase/test/20261103_provider_risk_holds.sql` after step 6. Rebuild/deploy the staging webhook receiver and configure only its sandbox event subscription before enabling dispute processing. Do not acknowledge unbound or failed notices as processed.
+8. `supabase/test/20261103_startup_policy.sql` after steps 6–7 adds the stricter $100/one-unsettled-order global pilot gates, the two-business-day clock calculation, and the money-job dispatch lock. Existing unresolved fixtures continue to count; do not reset them or treat sample delivery as real delivery.
 
 Verify new tables have RLS enabled and anon/authenticated roles cannot invoke their RPCs or read their tables. Server-only RPCs accept actor IDs only from freshly verified server authentication. Never expose the Supabase server key in the browser, repository or chat.
 
@@ -32,6 +34,7 @@ After schema and deploy checks, use the existing preview-scoped environment conf
 - `RACK_RELIC_TEST_ISSUE_RESPONSES_ENABLED=true` for shared issue updates and seller responses; this also requires the buyer-report flag.
 - `RACK_RELIC_TEST_ISSUE_REFUND_REVIEW_ENABLED=true` for read-only refund readiness and staging an amount in the existing local refund-review flow. The report flag and configured refund-operator access are also required.
 - `RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED=true` records a fresh provider-readiness projection when the seller checks their status, and exposes operator-only protection reviews/one-way seller holds. Seller onboarding must be enabled and the migration installed first. All transfer/payout controls remain disabled.
+- `RACK_RELIC_TEST_DISPUTE_HOLDS_ENABLED=true` on the staging webhook receiver activates signed dispute/early-fraud holds after migration 7. Closed or won notices remain held for review. No automatic refund, debit or transfer reversal is issued. Preserve and reconcile unknown provider identities and response deadlines.
 
 The review queue also requires the existing explicit refund-operator allowlist and refund flags. Do not widen that allowlist or remove the runtime's two-member staging restriction just to make a test pass. The SQL restricts this synthetic operator queue to orders the operator participates in. It is not a production admin role. If a dependency is missing, keep that feature off and resolve its specific dependency.
 

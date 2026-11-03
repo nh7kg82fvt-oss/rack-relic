@@ -122,6 +122,13 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
   if(!signatures.some(s=>/^[0-9a-f]{64}$/.test(s)&&timingSafeEqual(expected,Buffer.from(s,'hex'))))throw Error('Invalid webhook signature');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{throw Error('Invalid webhook JSON');}
   if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!=='acct_1UWJZuGVbz9Pnhxd')throw Error('Unsupported test event');
+  if(['charge.dispute.created','charge.dispute.updated','charge.dispute.closed','radar.early_fraud_warning.created'].includes(event.type)){
+    const d=event.data?.object,warning=event.type==='radar.early_fraud_warning.created';
+    if(d?.livemode!==false||d.object!==(warning?'radar.early_fraud_warning':'dispute')||!(warning?/^issfr_[A-Za-z0-9]+$/:/^du_[A-Za-z0-9]+$/).test(d.id||'')||!/^ch_[A-Za-z0-9]+$/.test(d.charge||'')||d.payment_intent!=null&&!/^pi_[A-Za-z0-9]+$/.test(d.payment_intent)||!Number.isSafeInteger(event.created)||event.created<1||event.created>nowSeconds+30)throw Error('Invalid test dispute notice');
+    if(warning){if(typeof d.actionable!=='boolean')throw Error('Invalid fraud warning');}
+    else if(d.currency!=='usd'||cents(d.amount,30000000)<1||!['warning_needs_response','warning_under_review','warning_closed','needs_response','under_review','appeal_needs_response','appeal_under_review','won','lost','prevented'].includes(d.status)||d.evidence_details?.due_by!=null&&(!Number.isSafeInteger(d.evidence_details.due_by)||d.evidence_details.due_by<1))throw Error('Invalid dispute evidence');
+    return event;
+  }
   if(['refund.created','refund.updated','refund.failed'].includes(event.type)){
     const r=event.data?.object;
     // Refund objects have no livemode field: the signed event supplies it.
@@ -149,9 +156,14 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
 }
 // Shared Node/Edge routing. Activation follows the refund migration; defaults
 // preserve the already-deployed checkout receiver until staging is upgraded.
-function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnabled=false}={}){
+function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false}={}){
   const s=event.data.object;
   const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
+  if(event.type.startsWith('charge.dispute.')||event.type==='radar.early_fraud_warning.created'){
+    if(!disputesEnabled)throw Error('Test dispute receiver not activated');
+    const warning=event.type==='radar.early_fraud_warning.created';
+    return {name:'rr_test_process_risk_notice',payload:{...common,p_case:s.id,p_charge:s.charge,p_payment_intent:s.payment_intent??null,p_amount:warning?null:s.amount,p_currency:warning?null:s.currency,p_status:warning?'warning_received':s.status,p_due:warning?null:s.evidence_details?.due_by??null,p_created:event.created}};
+  }
   if(event.type.startsWith('refund.')){
     if(!refundsEnabled)throw Error('Test refund receiver not activated');
     const payload={...common,p_refund:s.id,p_payment_intent:s.payment_intent,p_charge:s.charge,p_amount:s.amount,p_currency:s.currency,p_status:s.status,p_created:event.created};
