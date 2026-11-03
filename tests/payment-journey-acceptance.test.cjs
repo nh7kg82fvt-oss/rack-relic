@@ -78,8 +78,7 @@ function harness({loseCheckoutResponse=false}={}){
   const path=u.pathname;
   if(path==='/v1/account')return Response.json({id:ACCOUNT});
   if(path==='/v1/balance')return Response.json({livemode:false});
-  if(path==='/v1/accounts/acct_journeySeller')return Response.json({object:'account',id:'acct_journeySeller',country:'US',details_submitted:true,payouts_enabled:true,
-   capabilities:{transfers:'active'},requirements:{currently_due:[],past_due:[],pending_verification:[],disabled_reason:null},metadata:{rr_test_seller_id:S,rr_test_platform:ACCOUNT}});
+  if(path==='/v2/core/accounts/acct_journeySeller')return Response.json({object:'v2.core.account',id:'acct_journeySeller',livemode:false,identity:{country:'US'},dashboard:'express',applied_configurations:['recipient'],defaults:{responsibilities:{fees_collector:'application',losses_collector:'application',requirements_collector:'stripe'}},configuration:{recipient:{capabilities:{stripe_balance:{stripe_transfers:{status:'active'}}}}},requirements:{entries:[]},metadata:{rr_test_seller_id:S,rr_test_platform:ACCOUNT}});
   if(path==='/v1/tax/settings')return Response.json({livemode:false,status:'active',head_office:{address:TO}});
   if(path==='/v1/tax/registrations')return Response.json({object:'list',has_more:false,data:[{livemode:false,status:'active',active_from:Math.floor(Date.now()/1000)-100,country:'US',country_options:{us:{type:'state_sales_tax',state:'WA'}}}]});
   if(path==='/v1/tax/calculations'){

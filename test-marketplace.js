@@ -21,7 +21,7 @@
    if(version!==authVersion||!token)return;
    if(d.test!==true||d.transfersEnabled!==false||d.payoutsEnabled!==false)throw Error('Invalid seller status');
    $('seller-result').textContent=d.state==='provider_ready'?'Stripe test verification complete. Transfers and payouts remain disabled.':d.state==='needs_reconciliation'?'Account creation needs review. Do not start another account.':d.state==='verification_pending'?'Stripe is reviewing the test information.':'Test seller setup is incomplete.';
-   if(start){const u=new URL(d.onboardingUrl);if(u.protocol!=='https:'||u.hostname!=='connect.stripe.com'||u.port||u.username||u.password||!u.pathname.startsWith('/setup/'))throw Error('Invalid Stripe onboarding link');location.assign(u.href);}
+   if(start){const u=new URL(d.onboardingUrl);if(u.protocol!=='https:'||u.hostname!=='accounts.stripe.com'||u.port||u.username||u.password||!/^\/r\/acct_[A-Za-z0-9]+$/.test(u.pathname)||u.search||!/^#alu_test_[A-Za-z0-9]+$/.test(u.hash))throw Error('Invalid Stripe onboarding link');location.assign(u.href);}
   });
  }
  $('seller-status').addEventListener('click',()=>void sellerSetup(false));

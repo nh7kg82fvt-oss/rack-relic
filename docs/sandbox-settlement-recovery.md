@@ -122,8 +122,9 @@ proof of a real bank connection, real shipment delivery or live recoverability.
 
 The matching private deployment, installed migrations, test connected account,
 manual schedule and default test bank still need read-back verification and a
-complete hosted simulation. Current onboarding and live adaptation also require
-the reviewed Accounts v2 creation/remediation path. Keep the marketplace
+complete hosted simulation. The Accounts v2 creation and hosted-remediation
+source is now prepared and locally tested; hosted compatibility, account-update
+notifications and live adaptation remain pending. Keep the marketplace
 agreement and public payments held until the complete launch matrix passes.
 
 Primary references:
