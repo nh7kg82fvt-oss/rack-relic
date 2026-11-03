@@ -25,8 +25,9 @@
   let policy;
   if(v.policy!==undefined){
    const p=v.policy;
-   if(p?.version!=='startup-v1'||p.maxOrderCents!==10000||p.maxUnsettledOrders!==1||p.maxUnsettledGrossCents!==10000||p.minBusinessDaysAfterDelivery!==2||p.automaticRelease!==false)throw Error('Startup policy needs review; seller funds remain held');
-   policy={version:'startup-v1',maxOrderCents:10000,maxUnsettledOrders:1,maxUnsettledGrossCents:10000,minBusinessDaysAfterDelivery:2,automaticRelease:false};
+   const limit=p?.version==='startup-v1'?10000:p?.version==='startup-v2'?20000:null;
+   if(limit===null||p.maxOrderCents!==limit||p.maxUnsettledOrders!==1||p.maxUnsettledGrossCents!==limit||p.minBusinessDaysAfterDelivery!==2||p.automaticRelease!==false)throw Error('Startup policy needs review; seller funds remain held');
+   policy={version:p.version,maxOrderCents:limit,maxUnsettledOrders:1,maxUnsettledGrossCents:limit,minBusinessDaysAfterDelivery:2,automaticRelease:false};
   }
   return {test:true,orderId,state:'held',blockers:[...v.blockers],releaseEnabled:false,transferCreated:false,payoutCreated:false,...(policy?{policy}:{})};
  }

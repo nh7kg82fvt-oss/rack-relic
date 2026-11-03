@@ -1,14 +1,16 @@
 # Payment launch acceptance and evidence
 
-Prepared November 2, 2026 (Pacific). Baseline: draft PR #27, remote commit
-`dff3ce7be9b50bb1c2c95727fc08627e3a5f6de5`, tested source tree
-`04d73d1a6b92ac544a280b69bb7d349990a9a931`. This is an acceptance plan and
+Prepared November 2, 2026 (Pacific). Baseline: draft PR #27, baseline remote commit
+`c637a03d790718e73cc0101713a3c4b4b9c3637c`, tested source tree
+`3e5a2e09a38c09246b4f2e5f1163870fa0cc17a3`. This is an acceptance plan and
 read-only source/evidence audit, not a record of newly completed hosted tests.
 
 **Current recommendation: keep live marketplace payments closed.** The source
 has substantial local coverage, but the current 5% plus $0.50 flow is not yet
-installed and accepted end to end. Seller settlement and recovery, real delivery
-binding, tax workers and immediate operational alerts remain unfinished. The
+installed and accepted end to end. Live seller settlement/recovery and final residual-reserve handling, real delivery
+binding, tax workers and immediate operational alerts remain unfinished. A new
+sandbox-only settlement rehearsal has local provider-adapter and database tests;
+it does not grant normal release authority. The
 database deliberately prevents transfer/payout jobs from dispatching. Passing
 those hold tests is evidence that money stays held, not a completed seller payout.
 
@@ -48,7 +50,11 @@ and consent before one buyer payment, signed payment/refund replay, actual cost
 accounting, sticky issue/risk holds, a full refund and a lost Checkout response
 without a second payment. Seller payouts remain disabled; a refund does not
 recycle the startup allowance. This is local integration evidence only. The full
-local suite passed 557 checks after these journeys were added.
+local suite passed 557 checks after these journeys were added. The subsequent
+settlement, shipping and limit comparison work brings the current full local
+suite to 653 passing checks, including test bank failure, returned-funds
+recovery, signed-refund races and lost-ID reconciliation without another POST.
+See [sandbox settlement and recovery](sandbox-settlement-recovery.md).
 
 ## Resolve isolation before the next hosted transaction
 
@@ -67,7 +73,9 @@ local suite passed 557 checks after these journeys were added.
    then the fee/cost additions in [fee-policy-and-seller-costs.md](fee-policy-and-seller-costs.md).
    Inspect first; do not blindly reapply migrations or reset tables.
 4. The startup policy permits only **one unsettled order marketplace-wide** and
-   a **$100 complete order total**. Paid/refunded historical fixtures continue
+   an owner-approved **$200 complete order total**, including the buyer fee,
+   shipping and tax. The older $100 migration and evidence remain historical.
+   Paid/refunded historical fixtures continue
    to count; a refund does not automatically close their risk allowance. Existing
    records may therefore block every new hosted scenario. Preserve them. Resolve
    this through a separately reviewed isolated scenario environment or a reviewed
@@ -82,6 +90,30 @@ local suite passed 557 checks after these journeys were added.
 No access failure, missing migration, unavailable operator role or existing
 unsettled claim should be worked around. Preserve the reference and identify
 the specific access, installation or reconciliation decision needed.
+
+## Approved $200 and proposed $300 comparison
+
+`20261103_startup_limit_200.sql` is the additive approved starting policy. Install
+it after the fee/cost dependencies and before any future sandbox settlement
+addition. `supabase/proposals/startup_limit_300.sql` is a separate proposal for
+disposable local comparison only; it is not approved and must not appear in the
+staging or live activation sequence.
+
+| Property | Approved $200 | Proposed $300, local comparison only |
+| --- | --- | --- |
+| Complete buyer total, including fee/shipping/tax | At most $200.00 | At most $300.00 in its disposable test database |
+| Boundary behavior tested | $200.00 accepted; $200.01 rejected | $300.00 accepted; $300.01 rejected |
+| Marketplace unsettled-order limit | One | One |
+| Seller restrictions, waiting rule and normal money holds | Retained | Retained |
+| Approved browser policy projection | `startup-v2` accepted with exact $200 values | `startup-proposed-300` rejected |
+| Available cash, reserves and affordability | Must still be verified | Not established by this comparison |
+
+`tests/startup-limit-options.test.cjs` exercises the full PostgreSQL guard chain,
+new 5% plus $0.50 fee, shipping/tax boundaries, competing sellers, unknown/paid/
+refunded claims, seller holds and disabled release. The two comparison databases
+are separate; testing the proposal cannot alter the approved policy. Earlier
+$100 tests and migration remain unchanged. These are enforcement tests, not proof
+that either ceiling is affordable or protects the business from losses.
 
 ## Acceptance matrix
 
@@ -98,7 +130,7 @@ the specific access, installation or reconciliation decision needed.
 | Tracking and delivery wait | Local informational sample tracking deduplicates/rejects stale/conflicting observations. Two-business-day Pacific calendar tests cover weekends, holidays and DST. | Implement authenticated real delivery ingestion/retrieval bound to the paid order, original destination and label. Test delayed, forged, duplicate, returned, conflicting and unmapped notices, then the waiting boundary. Sample `DELIVERED` cannot authorize settlement. Extend/review the bounded calendar before unsupported dates. |
 | Provider costs and seller proceeds | Local immutable original-charge evidence and new bounded reserve/actual allocation tests exist, including shared seller/month/source caps and balanced entries. | Verify the complete provider charge inventory, account-specific billing and accepted seller policy; ingest actual processing, screening, account/month, payout and selected insurance evidence. Include tax tooling, failed attempts, refunds/credits and unallocated costs. Reconcile seller net without consuming buyer tax, postage or platform fee. The runtime intentionally reports an incomplete schedule. |
 | Refund before transfer | Local amount/access/dispatch/replay/recovery and signed pending/failed/succeeded receipt accounting exist. Historical application partial/full refund and saved-request retrieval are recorded. | Complete current-price partial/full refund, lost HTTP/database response, replay/out-of-order event and pending/failed/canceled provider outcomes; preserve original request IDs. Reconcile fee, tax, postage and inventory decisions. A saved HTTP acknowledgement is not a confirmed refund. |
-| Transfer, payout and post-transfer refund | Transfer/payout execution, reversals, recovery and bank-failure workers are not implemented. The startup guard rejects dispatch/completion of money jobs. | Implement and sandbox-test one idempotent separate transfer after every gate, availability/reserve checks, lost response, duplicate events, payout pending/success/failure, account restriction, transfer reversal, partial/full refund after transfer and unrecoverable negative balance. Reconcile platform, connected balance and bank-payout evidence. No live seller money until this passes. |
+| Transfer, payout and post-transfer refund | Sandbox-only adapters, durable simulation requests and a separate balanced simulation ledger now test transfers, standard payouts, verified bank returns, reversals, signed-refund races and lost-ID retrieval. The entire accepted cost ceiling is retained; unused reserve remains owed to the seller. Normal money jobs still reject dispatch/completion. | Install and run the current hosted simulation with a verified test seller, manual schedule and test bank. Then finish live settlement, final unused-reserve settlement, partial-refund allocation, funded post-bank-payout refunds and unrecoverable debt/recovery policy. Reconcile actual provider costs, platform/connected balances and payout evidence. Test bank connection and platform funds must be verified separately. No live seller money until this passes. |
 | Tax accounting | Test quote calculation and historical sandbox registration/calculation evidence exist. Tax-recording/refund-tax jobs remain held. | Resolve live marketplace obligations, registrations and item/buyer-fee/shipping tax classification. Implement and test transaction recording, partial/full refund reversals, ledger reconciliation and filing/remittance ownership. Calculated tax alone is not completed tax settlement or compliance. |
 | Support, disputes and notices | Local structured buyer issue, operator acknowledgment, seller response, refund-readiness and sticky dispute holds exist. Chat-assisted review is read-only. | Hosted participant isolation, deadline tracking, evidence/return/support procedure and production admin authority. Implement actual receipt/shipping/urgent notices with privacy and delivery-failure handling. Closed/won dispute, acknowledgment or clear score alone cannot remove all holds. |
 | Monitoring and operational readiness | Current chat setup monitor is every four hours; it can summarize accessible new cases and recommend actions. It cannot move money or supply continuous staffed coverage. | Test immediate verified provider alerts and durable holds, approximately 15-minute assisted flagged-case checks, alert delivery/failure, named urgent-response ownership and escalation. Faster cadence is a launch requirement, not currently running. Higher volume requires staffed response capacity. |
@@ -139,7 +171,8 @@ Focused references for failures or changes (not a replacement for the full run):
 
 ```sh
 node --test tests/fee-policy.test.cjs tests/fee-policy-sql.test.cjs tests/seller-costs-sql.test.cjs tests/test-seller-cost-service.test.cjs
-node --test tests/payment-journey-acceptance.test.cjs
+node --test tests/payment-journey-acceptance.test.cjs tests/shipping-journey-acceptance.test.cjs
+node --test tests/settlement-simulation-sql.test.cjs tests/stripe-test-settlement.test.cjs tests/settlement-service.test.cjs tests/settlement-runtime.test.cjs tests/startup-limit-options.test.cjs
 node --test tests/test-seller-protections.test.cjs tests/test-startup-policy.test.cjs tests/test-dispute-holds.test.cjs tests/test-edge-webhook.test.cjs
 node --test tests/test-checkout-flow.test.cjs tests/test-refund-dispatch.test.cjs tests/test-labels.test.cjs tests/test-tracking.test.cjs
 ```

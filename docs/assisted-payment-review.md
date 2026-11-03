@@ -31,6 +31,13 @@ escalation. The current setup monitor remains every four hours; the faster
 cadence has not been activated while payments are closed. Higher transaction
 volume requires staffed urgent response; periodic AI checks cannot supply it.
 
+The current approved starting limit is $200 for the complete buyer order,
+including fee, shipping and tax, with one unsettled order marketplace-wide.
+The earlier $100 policy is historical. A $300 proposal is tested only in a
+separate disposable local database and is not approved, installed or a reason
+to clear a hold. The monitor must compare against the approved installed policy;
+local boundary tests do not establish funded reserves or business affordability.
+
 ## What the assisted review presents
 
 Keep each case short and private, using only authorized order and provider

@@ -20,10 +20,16 @@ Sellers must possess and be able to supply the item they list.
 ## Initial pilot limits
 
 The complete buyer order total, including shipping, tax and buyer fee, must not
-exceed $100. Rack Relic permits one unsettled order across the marketplace at a
+exceed $200 under the owner-approved starting policy. Rack Relic permits one
+unsettled order across the marketplace at a
 time during the initial pilot. Limits may increase only after a separate risk
 and funding review. An order being paid or a seller receiving money does not
 by itself remove all refund/dispute exposure.
+
+The earlier $100 policy remains historical. A proposed $300 complete-order
+ceiling is being compared in local tests only; it is not approved or installed
+and is not part of these starting rules. Passing those tests does not establish
+available cash or the affordability of refunds and disputes.
 
 ## Shipping and records
 
