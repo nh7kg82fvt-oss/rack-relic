@@ -2,6 +2,7 @@
 (()=>{
  const $=id=>document.getElementById(id),money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n/100);
  let config,emailSignin,token=null,member=null,busy=false,authVersion=0,renderVersion=0,refundWidgets=[],checkoutWidgets=[];
+ const readOnly=()=>config?.environmentId==='acceptance-v1'&&config.checkoutEnabled!==true;
  const scopedKey=key=>key+(config?.environmentId==='acceptance-v1'?':acceptance-v1':'');
  const privateSession={getItem:key=>sessionStorage.getItem(scopedKey(key)),setItem:(key,value)=>sessionStorage.setItem(scopedKey(key),value),removeItem:key=>sessionStorage.removeItem(scopedKey(key))};
  const privateLocal={getItem:key=>localStorage.getItem(scopedKey(key)),setItem:(key,value)=>localStorage.setItem(scopedKey(key),value),removeItem:key=>localStorage.removeItem(scopedKey(key))};
@@ -10,12 +11,15 @@
  const note=text=>{$('notice').textContent=text;};
  function controls(){
   const signed=!!token;$('signin').hidden=signed;$('signed-in').hidden=!signed;
-  $('checkout').disabled=!signed||busy;$('refresh').disabled=!signed||busy;$('login').disabled=!config||busy;$('email-link').disabled=!config||busy;
-  $('seller-onboarding').hidden=!signed||config?.sellerOnboardingEnabled!==true;
+  $('checkout').disabled=!signed||busy||readOnly();$('refresh').disabled=!signed||busy;$('login').disabled=!config||busy;$('email-link').disabled=!config||busy;
+  $('seller-onboarding').hidden=!signed||readOnly()||config?.sellerOnboardingEnabled!==true;
   $('seller-status').disabled=!signed||busy;$('seller-start').disabled=!signed||busy;
   if(!signed){$('seller-result').textContent='';$('admin-link').hidden=true;}
-  for(const update of refundWidgets)update(!signed||busy);
-  for(const update of checkoutWidgets)update(!signed||busy);
+  for(const update of refundWidgets)update(!signed||busy||readOnly());
+  for(const update of checkoutWidgets)update(!signed||busy||readOnly());
+ }
+ function forgetSession(message){
+  authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];checkoutWidgets=[];privateSession.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();$('issue-review').hidden=true;$('issue-review-rows').replaceChildren();$('refund-review').hidden=true;$('refund-review-rows').replaceChildren();$('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();note(message);controls();
  }
  async function sellerSetup(start){
   await operation(async version=>{
@@ -34,7 +38,10 @@
   return privateSession.getItem(checkoutKey(owner))||(config.listing.id==='73737373-7373-4373-8373-737373737373'?privateSession.getItem('rr-private-test-order-'+owner):null);
  }
  async function api(action,options={},authorization=token){
+  if(readOnly()&&(!['config','orders'].includes(action)||(options.method||'GET')!=='GET'))throw Error('Practice checkout is closed. Read-only access only.');
+  const version=authVersion;
   const r=await fetch('/api/test-marketplace?action='+action,{cache:'no-store',signal:AbortSignal.timeout(20000),...options,headers:{...(authorization?{Authorization:'Bearer '+authorization}:{}),...options.headers}});
+  if(readOnly()&&[401,403].includes(r.status)&&version===authVersion&&authorization===token&&token!==null)forgetSession('Sign in again. Private test records have been cleared. Practice checkout remains closed.');
   const data=await r.json();if(!r.ok)throw Error(data.error||'Test request failed');return data;
  }
  function cents(value){
@@ -396,13 +403,13 @@
   $('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();
   $('issue-review').hidden=true;$('issue-review-rows').replaceChildren();
   $('refund-review').hidden=true;$('refund-review-rows').replaceChildren();
-  const [result,access,adminAccess]=await Promise.all([api('orders',{},authorization),api('refund-access',{},authorization).catch(()=>null),config?.adminOverviewEnabled===true?fetch('/api/test-admin?action=access',{cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+authorization}}).then(async response=>response.ok?response.json():null).catch(()=>null):null]);
+  const [result,access,adminAccess]=await Promise.all([api('orders',{},authorization),readOnly()?null:api('refund-access',{},authorization).catch(()=>null),config?.adminOverviewEnabled===true?fetch('/api/test-admin?action=access',{cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+authorization}}).then(async response=>response.ok?response.json():null).catch(()=>null):null]);
   if(version!==renderVersion||owner!==member||authorization!==token)return false;
   const rows=result.orders;if(!Array.isArray(rows))throw Error('Invalid test order list');
   let refunds=null;
   if(access?.test===true&&access.allowed===true){refunds=createTestRefundRequests({storage:privateLocal,memberId:owner,request:(action,options)=>{if(owner!==member||authorization!==token)throw Error('Sign in again before checking this request');return api(action,options,authorization);}});}
   $('orders').replaceChildren();refundWidgets=[];checkoutWidgets=[];
-  if(refunds&&config.adminOverviewEnabled===true&&adminAccess?.test===true&&adminAccess.allowed===true)$('admin-link').hidden=false;
+  if((readOnly()||refunds)&&config.adminOverviewEnabled===true&&adminAccess?.test===true&&adminAccess.allowed===true)$('admin-link').hidden=false;
   if(refunds)shippingPanel();
   if(refunds&&config?.issueReviewEnabled===true){$('issue-review').hidden=false;void loadIssueReview(version,owner,authorization);}
   if(refunds){$('refund-review').hidden=false;void loadRefundReview(version,owner,authorization);}
@@ -418,14 +425,16 @@
      if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
     }card.append(refund);
    }
-   issuePanel(card,o);issueThreadPanel(card,o);sellerCostPanel(card,o);
-   if(refunds){refundPanel(card,o,refunds);issueRefundReviewPanel(card,o,refunds);}
-   if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
-   if(refunds)protectionPanel(card,o);
-   if(refunds)fulfillmentPanel(card,o);
-   if(refunds)sampleLabelPanel(card,o);
-   if(refunds)settlementPanel(card,o);
-   if(o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
+   if(!readOnly()){
+    issuePanel(card,o);issueThreadPanel(card,o);sellerCostPanel(card,o);
+    if(refunds){refundPanel(card,o,refunds);issueRefundReviewPanel(card,o,refunds);}
+    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
+    if(refunds)protectionPanel(card,o);
+    if(refunds)fulfillmentPanel(card,o);
+    if(refunds)sampleLabelPanel(card,o);
+    if(refunds)settlementPanel(card,o);
+   }
+   if(!readOnly()&&o.buyer_id===owner&&o.state==='reserved'&&o.can_cancel_preparation===true){
     const cancel=document.createElement('button');cancel.type='button';cancel.className='secondary';cancel.textContent='Cancel checkout preparation';
     checkoutWidgets.push(disabled=>{cancel.disabled=disabled;});
     cancel.addEventListener('click',()=>operation(async auth=>{
@@ -438,7 +447,7 @@
      await orders();if(auth===authVersion)note('Checkout preparation cancelled. The previous order remains in your history.');
     }));card.append(cancel);
    }
-   if(config?.listing?.id&&o.buyer_id===owner&&o.listing_id===config.listing.id&&['expired','payment_failed','cancelled'].includes(o.state)&&savedCheckout(owner)===o.id){
+   if(!readOnly()&&config?.listing?.id&&o.buyer_id===owner&&o.listing_id===config.listing.id&&['expired','payment_failed','cancelled'].includes(o.state)&&savedCheckout(owner)===o.id){
     const next=document.createElement('button');next.type='button';next.className='secondary';next.textContent='Prepare a new test checkout';
     checkoutWidgets.push(disabled=>{next.disabled=disabled;});
     next.addEventListener('click',()=>operation(async auth=>{
@@ -458,7 +467,7 @@
   const version=++authVersion;token=session.access_token;member=session.user.id;
   try{await orders();}catch(e){if(version===authVersion){token=null;member=null;privateSession.removeItem('rr-private-test-session');}throw e;}
   if(version!==authVersion||token!==session.access_token)return false;
-  privateSession.setItem('rr-private-test-session',JSON.stringify({token,member,email:session.user.email}));$('identity').textContent=session.user.email;note('Signed in. Ready for a test purchase.');return true;
+  privateSession.setItem('rr-private-test-session',JSON.stringify({token,member,email:session.user.email}));$('identity').textContent=session.user.email;note(readOnly()?'Signed in for read-only access. Practice checkout remains closed.':'Signed in. Ready for a test purchase.');return true;
  }
  $('email-link').addEventListener('click',async()=>{
   if(busy||!$('email').reportValidity())return;busy=true;controls();
@@ -468,9 +477,10 @@
  $('signin').addEventListener('submit',async e=>{e.preventDefault();if(busy)return;busy=true;controls();try{
   const r=await fetch(config.projectUrl+'/auth/v1/token?grant_type=password',{method:'POST',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{apikey:config.publishableKey,'Content-Type':'application/json'},body:JSON.stringify({email:$('email').value,password:$('password').value})});$('password').value='';const session=await r.json();if(!r.ok)throw Error('Sign-in failed. Try the email sign-in link instead.');await acceptSession(session);
  }catch(e){note(e.name==='TimeoutError'?'Sign-in did not respond. Please try again.':e.message);}finally{$('password').value='';busy=false;controls();}});
- $('logout').addEventListener('click',()=>{authVersion++;renderVersion++;token=null;member=null;busy=false;refundWidgets=[];checkoutWidgets=[];privateSession.removeItem('rr-private-test-session');$('identity').textContent='';$('orders').replaceChildren();$('issue-review').hidden=true;$('issue-review-rows').replaceChildren();$('refund-review').hidden=true;$('refund-review-rows').replaceChildren();$('shipping-test').hidden=true;$('shipping-test-results').replaceChildren();$('shipping-test-controls').replaceChildren();note('Signed out of the private test area.');controls();});
+ $('logout').addEventListener('click',()=>forgetSession('Signed out of the private test area.'));
  $('refresh').addEventListener('click',()=>operation(async version=>{await orders();if(version===authVersion)note('Orders refreshed from the test database.');}));
  $('checkout').addEventListener('click',()=>operation(async version=>{
+  if(readOnly())throw Error('Practice checkout is closed. Read-only access only.');
   const key=checkoutKey(member);let orderId=savedCheckout(member);
   if(!orderId)orderId=crypto.randomUUID();privateSession.setItem(key,orderId);
   note('Reserving the test item and calculating the total…');const data=await api('checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId,listingId:config.listing.id,to:{line1:'400 Broad St',city:'Seattle',state:'WA',postal_code:'98109',country:'US'}})});
@@ -482,7 +492,12 @@
   const environment=globalThis.RackRelicTestEnvironments?.find(row=>row.id===candidate.environmentId&&row.projectUrl===candidate.projectUrl&&row.returnUrl===candidate.returnUrl);
   if(!environment||typeof location.origin==='string'&&location.origin!==environment.previewOrigin)throw Error('Private test environment is unavailable.');
   config=candidate;$('fixture-title').textContent=config.listing?.title||'Synthetic test jacket';
-  if(config.shippingMode==='shippo_test'){
+  if(readOnly()){
+   $('test-heading').textContent='Private account check';$('test-intro').textContent=config.notice;$('fixture-title').textContent='Practice checkout is closed';
+   $('fixture-price').hidden=true;$('fixture-destination').hidden=true;
+   $('shipping-caption').textContent='Sign-in and saved test records are available. Payment, shipping and seller setup actions remain closed.';
+   $('checkout').textContent='Practice checkout closed';
+  }else if(config.shippingMode==='shippo_test'){
    $('test-intro').textContent='Use your existing staging account. This separate test area uses a synthetic jacket, Shippo test shipping prices and Stripe’s test tax calculation. Nothing here purchases valid postage or moves real money.';
    $('shipping-caption').textContent='Buyer fee: $1.75 · Shipping calculated by Shippo in test mode. Tax calculated for the Seattle test destination below.';
    $('shipping-test-description').textContent='Checks Shippo with a separate synthetic 10 × 8 × 2 inch, 1 lb parcel from Seattle to New York. These prices may differ from live prices and from the destination-specific quote used in a checkout. No postage is purchased.';

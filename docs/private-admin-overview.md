@@ -56,6 +56,19 @@ provider payloads, payment/charge IDs or secrets appear in the projection.
   only `{test:true,allowed:true}`; refund access is not sufficient. The browser reuses
   the existing environment-scoped `rr-private-test-session` in sessionStorage.
   No new login, password, credential sharing or additional account is needed.
+- In the isolated `acceptance-v1` environment, sign-in and saved member-order
+  reads can be checked while `RACK_RELIC_TEST_CHECKOUT_ENABLED` remains false or
+  absent. They require the exact registered environment, two distinct verified
+  member UUIDs, the matching server key and a publishable key for sign-in.
+  Shipping credentials, a catalog selection and a Stripe secret key are not
+  dependencies of this read-only path. Only `GET config` and `GET orders` are
+  accepted by the marketplace route; every other action remains closed,
+  including provider-evidence GETs. The owner link uses the separate existing
+  fresh owner-access check, without opening refund access or review routes.
+  The page labels checkout closed, retains no session when member verification
+  fails and renders no order-action controls. The legacy practice environment
+  retains its existing checkout-dependent setup. This source change does not
+  configure hosted users, credentials, owner authority or feature flags.
 - The locked HTML shell and public `?action=config` contain no private records
   or operational panel markup. The browser constructs the private panel only
   after a validated owner-only response. Anonymous

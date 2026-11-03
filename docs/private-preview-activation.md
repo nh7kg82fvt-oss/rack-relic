@@ -51,6 +51,17 @@ Verify new tables have RLS enabled and anon/authenticated roles cannot invoke th
 
 After schema and deploy checks, use the existing preview-scoped environment configuration:
 
+For the new `acceptance-v1` branch, verify account sign-in before opening practice
+checkout. Keep `RACK_RELIC_TEST_CHECKOUT_ENABLED=false`, independently verify and
+bind exactly two member UUIDs, and save only the matching project's server and
+publishable keys. The read-only marketplace config and member-order reads then
+work without shipping credentials, a catalog selection or Stripe secret key.
+Every other marketplace action remains closed. Owner overview access still
+requires its own complete verified owner/operator binding, participation and
+flags below; a successful member login does not grant owner access. Confirm the
+owner-only link and support-user denial with actual hosted sessions. This is a
+source capability, not evidence that those hosted inputs are installed.
+
 - `RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED=true` only after installing step 14 and binding exactly one verified `RACK_RELIC_TEST_ADMIN_OWNER_ID` from the matching private Auth project. The owner must also be a participating test member/operator; do not put an email or browser role into this UUID field. No live owner role is created by this test setup.
 - `RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED=true` for seller acceptance.
 - `RACK_RELIC_TEST_ORDER_ISSUES_ENABLED=true` for buyer reports.
