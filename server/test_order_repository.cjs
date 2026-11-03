@@ -5,6 +5,7 @@ const {validateFulfillment,publicFulfillmentStatus}=require('./test_fulfillment.
 const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
 const {publicTrackingStatus}=require('./test_tracking_service.cjs');
 const {RESPONSES,publicIssueThread}=require('./test_issue_thread.cjs');
+const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -41,6 +42,7 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   return f?.test===true&&f.orderId===orderId&&/^pi_[A-Za-z0-9]+$/.test(f.paymentIntentId||'')&&/^ch_[A-Za-z0-9]+$/.test(f.chargeId||'')&&/^txn_[A-Za-z0-9]+$/.test(f.balanceTransactionId||'')&&f.currency==='USD'&&Number.isSafeInteger(f.grossCents)&&f.grossCents>0&&f.grossCents<=30000000&&(total===undefined||f.grossCents===total)&&(pi===undefined||f.paymentIntentId===pi)&&Number.isSafeInteger(f.feeCents)&&f.feeCents>=0&&f.feeCents<=f.grossCents&&Number.isSafeInteger(f.netCents)&&f.netCents===f.grossCents-f.feeCents&&Number.isSafeInteger(f.checkedAt)&&Array.isArray(f.feeDetails)&&f.feeDetails.length<=20&&f.feeDetails.every(d=>['stripe_fee','tax'].includes(d?.type)&&d.currency==='USD'&&Number.isSafeInteger(d.amountCents)&&d.amountCents>=0)&&f.feeDetails.reduce((n,d)=>n+d.amountCents,0)===f.feeCents;
  }
  return Object.freeze({
+  async issueRefundReview({authorization,orderId}){id(orderId);const actor=await refundOperator(authorization);return publicIssueRefundReview(await rpc('rr_test_issue_refund_review',{p_actor:actor,p_order:orderId}),orderId);},
   async reviewOrderIssues({authorization}){
    const actor=await refundOperator(authorization),rows=await rpc('rr_test_issue_review',{p_actor:actor});
    const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v));

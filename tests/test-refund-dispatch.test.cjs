@@ -71,8 +71,8 @@ test('lost POST response remains held beyond provider idempotency retention and 
 });
 test('a signed receipt recovers the lost refund ID and accounts once without another POST',async()=>{
  const x=setup({onPost:async()=>{throw Error('lost response');}});await assert.rejects(x.service.start(input));
- await x.repository.acceptStripeEvent(signed());assert.equal((await requestRow()).phase,'known');assert.equal((await requestRow()).refund_id,'re_fixture');
- await x.service.start(input);await x.repository.acceptStripeEvent(signed());assert.equal(posts(x.calls).length,1);assert.equal((await orderRow()).refunded_cents,1000);assert.deepEqual(await ledger(),{count:7,balance:0});
+ const receipt=signed();await x.repository.acceptStripeEvent(receipt);assert.equal((await requestRow()).phase,'known');assert.equal((await requestRow()).refund_id,'re_fixture');
+ await x.service.start(input);await x.repository.acceptStripeEvent(receipt);assert.equal(posts(x.calls).length,1);assert.equal((await orderRow()).refunded_cents,1000);assert.deepEqual(await ledger(),{count:7,balance:0});
 });
 test('webhook arriving before the POST response saves the same identity and does not duplicate accounting',async()=>{
  const x=setup({onPost:repo=>repo.acceptStripeEvent(signed())});await x.service.start(input);assert.equal((await requestRow()).refund_id,'re_fixture');assert.deepEqual(await ledger(),{count:7,balance:0});assert.equal(posts(x.calls).length,1);

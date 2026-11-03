@@ -106,6 +106,19 @@
   }
   card.append(section);
  }
+ function issueRefundReviewPanel(card,o,client){
+  if(config?.issueRefundReviewEnabled!==true||!['paid','review'].includes(o.state))return;
+  const owner=member,authorization=token,version=renderVersion,current=()=>owner===member&&authorization===token&&version===renderVersion;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p'),check=document.createElement('button'),stage=document.createElement('button');summary.textContent='Issue refund readiness';status.textContent='Check confirmed refunds and outstanding requests before reviewing another refund. Return requirements and the support decision still need review.';check.type=stage.type='button';check.className=stage.className='secondary';check.textContent='Check issue refund readiness';stage.textContent='Prepare remaining test refund for review';stage.hidden=true;section.append(summary,status,check,stage);card.append(section);checkoutWidgets.push(disabled=>{check.disabled=disabled;stage.disabled=disabled;});
+  const labels={not_reported:'No buyer report is saved for this order.',needs_reconciliation:'Refund evidence needs reconciliation. Keep every saved request reference.',pending:'A refund or saved request is still pending. Do not start another.',refunded:'The full refund is confirmed by payment notices. The issue still requires closure.',awaiting_acknowledgment:'A test operator must acknowledge the report before refund review.',available_for_review:'The remaining amount is available for operator review.'};
+  async function readiness(){const r=publicTestIssueRefundReview(await api('issue-refund-review&orderId='+encodeURIComponent(o.id),{},authorization),o.id);if(r.state!=='not_reported'&&r.totalCents!==o.total_cents)throw Error('Order amount needs reconciliation');return r;}
+  function show(r){status.textContent=labels[r.state]+(r.state==='not_reported'?'':' Confirmed: '+money(r.confirmedCents)+'. Remaining: '+money(r.remainingCents)+'.');stage.hidden=!r.canPrepare||!!client.current(o.id);if(r.canPrepare&&client.current(o.id))status.textContent+=' Continue with the existing saved refund reference.';}
+  check.addEventListener('click',()=>operation(async auth=>{stage.hidden=true;const r=await readiness();if(!current()||auth!==authVersion)return;show(r);}));
+  stage.addEventListener('click',()=>operation(async auth=>{
+   if(!current())return;stage.hidden=true;if(client.current(o.id))throw Error('Keep the existing refund reference.');const r=await readiness();if(!current()||auth!==authVersion)return;show(r);if(!r.canPrepare)return;
+   client.prepare({orderId:o.id,amountCents:r.remainingCents,baselineCents:r.confirmedCents});await orders();if(auth===authVersion&&owner===member)note('Remaining test refund saved for review. Check its amount in Operator test refund before issuing it. No refund was sent.');
+  }));
+ }
  function trackingPanel(card,o){
   if(config.trackingEnabled!==true)return;
   const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Sample shipment tracking';status.textContent='Check the saved sample status or refresh it from Shippo. Sample tracking does not establish real delivery or release seller funds.';section.append(summary,status);card.append(section);
@@ -265,7 +278,7 @@
     }card.append(refund);
    }
    issuePanel(card,o);issueThreadPanel(card,o);
-   if(refunds)refundPanel(card,o,refunds);
+   if(refunds){refundPanel(card,o,refunds);issueRefundReviewPanel(card,o,refunds);}
    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
    if(refunds)fulfillmentPanel(card,o);
    if(refunds)sampleLabelPanel(card,o);
