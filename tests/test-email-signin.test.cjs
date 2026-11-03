@@ -1,6 +1,9 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {webcrypto,createHash}=require('node:crypto');
 const {createTestEmailSignin}=require('../test-signin.js');
+const fs=require('node:fs');
+const environments=require('../test-environments.js');
+const {build}=require('../scripts/build-test-environments.cjs');
 function setup(fetchImpl,clock=()=>100000){const entries=new Map(),storage={getItem:k=>entries.get(k)||null,setItem:(k,v)=>entries.set(k,v),removeItem:k=>entries.delete(k)};return {entries,client:createTestEmailSignin({publishableKey:'sb_publishable_fixture',storage,fetchImpl,cryptoImpl:webcrypto,clock})};}
 test('email login binds an existing account to this browser through S256 PKCE and an exact return URL',async()=>{
  let sent;const {client,entries}=setup(async(url,options)=>{sent={url,options};return Response.json({});});
@@ -25,4 +28,33 @@ test('restricted email delivery is explained and failed requests do not strand t
 });
 test('network failure has a bounded request and a recoverable message',async()=>{
  const {client,entries}=setup(async(_url,options)=>{assert.ok(options.signal);throw Error('internal transport information');});await assert.rejects(client.send('buyer@example.com'),/did not respond/);assert.equal(entries.size,0);
+});
+test('browser identity registry is generated exactly from the reviewed server tuples',()=>{
+ assert.equal(fs.readFileSync(require.resolve('../test-environments.js'),'utf8'),build());
+ assert.ok(Object.isFrozen(environments)&&environments.every(Object.isFrozen));
+ assert.equal(environments.length,2);
+});
+test('acceptance sign-in uses its exact callback and cannot consume legacy browser proof',async()=>{
+ const row=environments.find(v=>v.id==='acceptance-v1'),entries=new Map(),calls=[];
+ const storage={getItem:k=>entries.get(k)??null,setItem:(k,v)=>entries.set(k,v),removeItem:k=>entries.delete(k)};
+ const fetchImpl=async(url,options)=>{calls.push({url,options});return Response.json(url.includes('/otp?')?{}:{access_token:'fixture',user:{id:'member',email:'buyer@example.com'}});};
+ const legacy=createTestEmailSignin({publishableKey:'sb_publishable_fixture',storage,fetchImpl,cryptoImpl:webcrypto});
+ const current=createTestEmailSignin({...row,environmentId:row.id,publishableKey:'sb_publishable_fixture',storage,fetchImpl,cryptoImpl:webcrypto});
+ await legacy.send('buyer@example.com');const old=entries.get('rr-test-email-signin');
+ await assert.rejects(current.complete('wrong-environment'),/same Chrome profile/);assert.equal(calls.length,1);assert.equal(entries.get('rr-test-email-signin'),old);
+ await current.send('buyer@example.com');assert.equal(new URL(calls[1].url).origin,row.projectUrl);assert.equal(new URL(calls[1].url).searchParams.get('redirect_to'),row.returnUrl);
+ assert.equal(entries.size,2);await current.complete('acceptance-code');assert.equal(entries.get('rr-test-email-signin'),old);assert.equal(entries.size,1);
+});
+test('mixed, arbitrary and cross-project sign-in targets fail before any request',()=>{
+ const a=environments[0],b=environments[1];let calls=0;
+ for(const patch of [{projectUrl:a.projectUrl,returnUrl:b.returnUrl},{projectUrl:b.projectUrl,returnUrl:a.returnUrl},{projectUrl:b.projectUrl,returnUrl:b.returnUrl,environmentId:a.id},{projectUrl:'https://evil.invalid',returnUrl:a.returnUrl},{projectUrl:a.projectUrl,returnUrl:a.returnUrl+'?redirect=elsewhere'}]){
+  assert.throws(()=>createTestEmailSignin({...patch,publishableKey:'sb_publishable_fixture',storage:{},fetchImpl:()=>calls++}),/unavailable/);
+ }
+ assert.equal(calls,0);
+});
+test('copied or corrupted pending proof cannot be exchanged in another environment',async()=>{
+ const row=environments.find(v=>v.id==='acceptance-v1'),entries=new Map(),storage={getItem:k=>entries.get(k)??null,setItem:(k,v)=>entries.set(k,v),removeItem:k=>entries.delete(k)};let calls=0;
+ const client=createTestEmailSignin({...row,environmentId:row.id,publishableKey:'sb_publishable_fixture',storage,cryptoImpl:webcrypto,fetchImpl:async()=>{calls++;return Response.json({});}});
+ await client.send('buyer@example.com');const key='rr-test-email-signin:'+row.id,pending=JSON.parse(entries.get(key));pending.projectUrl=environments[0].projectUrl;entries.set(key,JSON.stringify(pending));
+ await assert.rejects(client.complete('code'),/same Chrome profile/);assert.equal(calls,1);assert.equal(entries.size,0);
 });

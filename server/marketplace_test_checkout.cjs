@@ -2,6 +2,8 @@
 // Server-only test foundation. No public route, production configuration,
 // inventory writes, transfers, refund issuance or live credentials are supported.
 const {createHmac, timingSafeEqual, createHash}=require('node:crypto');
+const {TEST_ENVIRONMENTS}=require('./test_environment_registry.cjs');
+const {stripeEnvironment,integrationTag,environmentMetadata,matchesEnvironmentMetadata,idempotencyKey}=require('./test_stripe_environment.cjs');
 const {LEGACY_FEE_POLICY,CURRENT_FEE_POLICY,feePolicy,buyerFee}=require('./fee_policy.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SESSION=/^cs_test_[A-Za-z0-9]+$/;
@@ -54,8 +56,8 @@ function validatePersistedSnapshot(snapshot){
   cents(snapshot.shippingCents,100000);cents(snapshot.totalCents,30000000);
   if(snapshot.itemCents<100||snapshot.buyerFeeCents!==buyerFee(snapshot.itemCents,snapshot.feePolicyVersion===undefined?LEGACY_FEE_POLICY:snapshot.feePolicyVersion)||snapshot.totalCents!==snapshot.itemCents+snapshot.buyerFeeCents+snapshot.shippingCents+snapshot.taxCents)throw Error('Invalid persisted test total');
 }
-function validateSession(data,snapshot,expectedId){
-  if(data?.livemode!==false||!SESSION.test(data.id)||expectedId&&data.id!==expectedId||data.mode!=='payment'||data.currency!=='usd'||data.amount_total!==snapshot.totalCents||data.client_reference_id!==snapshot.orderId||data.metadata?.integration!=='rack_relic_test'||data.metadata?.order_id!==snapshot.orderId)throw Error('Stripe test response does not match the order');
+function validateSession(data,snapshot,expectedId,environment){
+  if(data?.livemode!==false||!SESSION.test(data.id)||expectedId&&data.id!==expectedId||data.mode!=='payment'||data.currency!=='usd'||data.amount_total!==snapshot.totalCents||data.client_reference_id!==snapshot.orderId||data.metadata?.integration!==integrationTag(environment,'rack_relic_test')||!matchesEnvironmentMetadata(data.metadata,environment)||data.metadata?.order_id!==snapshot.orderId)throw Error('Stripe test response does not match the order');
   const states={open:'unpaid',expired:'unpaid'};
   if(!['open','complete','expired'].includes(data.status)||!['unpaid','paid'].includes(data.payment_status)||states[data.status]&&data.payment_status!==states[data.status])throw Error('Invalid Stripe test session state');
   if(!Number.isSafeInteger(data.expires_at)||data.expires_at<=0)throw Error('Invalid Stripe test expiry');
@@ -68,16 +70,24 @@ function validateSession(data,snapshot,expectedId){
     state:data.status==='complete'?(data.payment_status==='paid'?'paid':'payment_pending'):data.status,
     expiresAt:data.expires_at*1000});
 }
-function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,returnOrigin='http://localhost:3000'}={}){
-  if(!['http://localhost:3000','https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app'].includes(returnOrigin))throw Error('Protected test return origin required');
+function createStripeTestCheckoutClient({secretKey,accountId=TEST_ENVIRONMENTS.legacy.accountId,fetchImpl=globalThis.fetch,returnOrigin='http://localhost:3000'}={}){
+  const environment=stripeEnvironment(accountId);
+  if(returnOrigin!==environment.previewOrigin&&!(environment.id==='legacy'&&returnOrigin==='http://localhost:3000'))throw Error('Protected test return origin required');
   if(typeof secretKey!=='string'||!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(secretKey))throw Error('Stripe test secret key required');
   if(typeof fetchImpl!=='function')throw Error('Test transport required');
+  async function verifiedAcceptanceAccount(){
+    if(environment.id==='legacy')return;
+    const read=async path=>{let r;try{r=await fetchImpl('https://api.stripe.com'+path,{method:'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{Authorization:'Bearer '+secretKey,'Stripe-Version':STRIPE_VERSION}});}catch{throw Error('Fresh Stripe test identity unavailable');}const age=r.headers?.get('age');if(!r.ok||age!=null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((r.headers?.get(k)||'').toUpperCase())))throw Error('Fresh Stripe test identity required');return r.json();};
+    const [account,balance]=await Promise.all([read('/v1/account'),read('/v1/balance')]);
+    if(account?.object!=='account'||account.id!==environment.accountId||account.country!=='US'||balance?.livemode!==false)throw Error('Wrong Stripe test account');
+  }
   return Object.freeze({
     async createCheckout(input){
       const snapshot=buildTestCheckout(input);
-      const form=new URLSearchParams({mode:'payment',integration_identifier:INTEGRATION_IDENTIFIER,'adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:returnOrigin+'/api/test-marketplace?view=return&session_id={CHECKOUT_SESSION_ID}',cancel_url:returnOrigin+'/api/test-marketplace?view=cancel',client_reference_id:snapshot.orderId,
-        'metadata[order_id]':snapshot.orderId,'metadata[integration]':'rack_relic_test',
-        'payment_intent_data[metadata][order_id]':snapshot.orderId,'payment_intent_data[transfer_group]':'rr_test_'+snapshot.orderId});
+      await verifiedAcceptanceAccount();
+      const form=new URLSearchParams({mode:'payment',integration_identifier:environment.id==='legacy'?INTEGRATION_IDENTIFIER:'rack_relic_test_nakfvqxe','adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:returnOrigin+'/api/test-marketplace?view=return&session_id={CHECKOUT_SESSION_ID}',cancel_url:returnOrigin+'/api/test-marketplace?view=cancel',client_reference_id:snapshot.orderId,
+        'metadata[order_id]':snapshot.orderId,'metadata[integration]':integrationTag(environment,'rack_relic_test'),...Object.fromEntries(Object.entries(environmentMetadata(environment)).map(([k,v])=>['metadata['+k+']',v])),
+        ...Object.fromEntries(Object.entries(environmentMetadata(environment)).map(([k,v])=>['payment_intent_data[metadata]['+k+']',v])),'payment_intent_data[metadata][order_id]':snapshot.orderId,'payment_intent_data[transfer_group]':'rr_test_'+snapshot.orderId});
       const policy=feePolicy(snapshot.feePolicyVersion);
       const feeLabel='Buyer platform fee ('+policy.percent+'%'+(policy.fixedCents?' + $'+(policy.fixedCents/100).toFixed(2)+' per order':'')+')';
       let index=0;
@@ -89,11 +99,12 @@ function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,re
       let response;
       try{response=await fetchImpl('https://api.stripe.com/v1/checkout/sessions',{
         method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),
-        headers:{Authorization:'Bearer '+secretKey,'Content-Type':'application/x-www-form-urlencoded','Stripe-Version':STRIPE_VERSION,'Idempotency-Key':'rr_test_checkout_'+snapshot.orderId},body:form.toString()
+        headers:{Authorization:'Bearer '+secretKey,'Content-Type':'application/x-www-form-urlencoded','Stripe-Version':STRIPE_VERSION,'Idempotency-Key':idempotencyKey(environment,'rr_test_checkout_',snapshot.orderId)},body:form.toString()
       });}catch{throw Error('Stripe test request uncertain; reconcile the same order before retrying');}
-      if(!response.ok)throw Error('Stripe test checkout rejected; reconcile before retrying');
+      const age=response.headers?.get('age');
+      if(!response.ok||age!=null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw Error('Stripe test checkout rejected; reconcile before retrying');
       let data;try{data=await response.json();}catch{throw Error('Invalid Stripe test response');}
-      const evidence=validateSession(data,snapshot);
+      const evidence=validateSession(data,snapshot,undefined,environment);
       if(evidence.state!=='open')throw Error('Existing test checkout is closed; reconcile the order');
       return Object.freeze({...evidence,snapshot});
     },
@@ -103,6 +114,7 @@ function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,re
       if(typeof sessionId!=='string'||!SESSION.test(sessionId))throw Error('Test session required');
       const expected=Object.freeze({...snapshot});
       validatePersistedSnapshot(expected);
+      await verifiedAcceptanceAccount();
       let response;
       try{response=await fetchImpl('https://api.stripe.com/v1/checkout/sessions/'+sessionId,{
         method:'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),
@@ -112,13 +124,14 @@ function createStripeTestCheckoutClient({secretKey,fetchImpl=globalThis.fetch,re
       const age=response.headers?.get('age');
       if(age!=null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw Error('Cached checkout evidence rejected');
       let data;try{data=await response.json();}catch{throw Error('Invalid Stripe test response');}
-      return validateSession(data,expected,sessionId);
+      return validateSession(data,expected,sessionId,environment);
     }
   });
 }
 // Verify RAW bytes before parsing. A durable unique event ID + atomic order
 // update is still required by the future consumer; this is not replay storage.
-function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.now()/1000)}={}){
+function verifyStripeTestEvent(raw,signature,{secret,accountId=TEST_ENVIRONMENTS.legacy.accountId,nowSeconds=Math.floor(Date.now()/1000)}={}){
+  const environment=stripeEnvironment(accountId);
   if(!Buffer.isBuffer(raw)||raw.length>1048576||typeof signature!=='string'||signature.length>4096||typeof secret!=='string'||!/^whsec_[A-Za-z0-9]+$/.test(secret)||!Number.isSafeInteger(nowSeconds))throw Error('Invalid test webhook input');
   const parts=signature.split(',').map(x=>x.trim().split('='));
   const times=parts.filter(x=>x[0]==='t');const signatures=parts.filter(x=>x[0]==='v1').map(x=>x[1]);
@@ -127,7 +140,7 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
   const expected=createHmac('sha256',secret).update(String(timestamp)+'.').update(raw).digest();
   if(!signatures.some(s=>/^[0-9a-f]{64}$/.test(s)&&timingSafeEqual(expected,Buffer.from(s,'hex'))))throw Error('Invalid webhook signature');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{throw Error('Invalid webhook JSON');}
-  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!=='acct_1UWJZuGVbz9Pnhxd')throw Error('Unsupported test event');
+  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!==environment.accountId)throw Error('Unsupported test event');
   if(['charge.dispute.created','charge.dispute.updated','charge.dispute.closed','radar.early_fraud_warning.created'].includes(event.type)){
     const d=event.data?.object,warning=event.type==='radar.early_fraud_warning.created';
     if(d?.livemode!==false||d.object!==(warning?'radar.early_fraud_warning':'dispute')||!(warning?/^issfr_[A-Za-z0-9]+$/:/^du_[A-Za-z0-9]+$/).test(d.id||'')||!/^ch_[A-Za-z0-9]+$/.test(d.charge||'')||d.payment_intent!=null&&!/^pi_[A-Za-z0-9]+$/.test(d.payment_intent)||!Number.isSafeInteger(event.created)||event.created<1||event.created>nowSeconds+30)throw Error('Invalid test dispute notice');
@@ -142,13 +155,13 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
     if(r?.object!=='refund'||!/^re_[A-Za-z0-9]+$/.test(r.id||'')||!/^pi_[A-Za-z0-9]+$/.test(r.payment_intent||'')||!/^ch_[A-Za-z0-9]+$/.test(r.charge||'')||r.currency!=='usd'||r.livemode===true)throw Error('Invalid test refund');
     if(!Number.isSafeInteger(event.created)||event.created<=0||event.created>nowSeconds+30||!['pending','requires_action','succeeded','failed','canceled'].includes(r.status))throw Error('Invalid refund evidence');
     if(event.type==='refund.failed'&&r.status!=='failed')throw Error('Conflicting refund evidence');
-    if(r.metadata?.integration==='rack_relic_test_refund'){uuid(r.metadata.request_id);uuid(r.metadata.order_id);}
+    if(['rack_relic_test_refund','rack_relic_test_refund_acceptance_v1'].includes(r.metadata?.integration)){if(r.metadata.integration!==integrationTag(environment,'rack_relic_test_refund')||!matchesEnvironmentMetadata(r.metadata,environment))throw Error('Refund environment mismatch');uuid(r.metadata.request_id);uuid(r.metadata.order_id);}
     if(cents(r.amount,30000000)<1)throw Error('Invalid refund amount');
     return event;
   }
   if(!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired'].includes(event.type))throw Error('Unsupported test event');
   const session=event.data?.object;
-  if(session?.livemode!==false||!SESSION.test(session.id)||session.mode!=='payment'||session.metadata?.integration!=='rack_relic_test')throw Error('Invalid test session');
+  if(session?.livemode!==false||!SESSION.test(session.id)||session.mode!=='payment'||session.metadata?.integration!==integrationTag(environment,'rack_relic_test')||!matchesEnvironmentMetadata(session.metadata,environment))throw Error('Invalid test session');
   uuid(session.client_reference_id);if(session.metadata?.order_id!==session.client_reference_id)throw Error('Order metadata mismatch');
   cents(session.amount_total,30000000);if(session.currency!=='usd')throw Error('Unsupported currency');
   if(!['paid','unpaid'].includes(session.payment_status))throw Error('Invalid test payment state');
@@ -162,8 +175,11 @@ function verifyStripeTestEvent(raw,signature,{secret,nowSeconds=Math.floor(Date.
 }
 // Shared Node/Edge routing. Activation follows the refund migration; defaults
 // preserve the already-deployed checkout receiver until staging is upgraded.
-function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false}={}){
+function stripeTestEventRpc(event,raw,{accountId=TEST_ENVIRONMENTS.legacy.accountId,refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false}={}){
+  const environment=stripeEnvironment(accountId);
+  if(event?.livemode!==false||event.account&&event.account!==environment.accountId)throw Error('Wrong test event environment');
   const s=event.data.object;
+  if(event.type.startsWith('checkout.')&&(s.metadata?.integration!==integrationTag(environment,'rack_relic_test')||!matchesEnvironmentMetadata(s.metadata,environment)))throw Error('Wrong checkout environment');
   const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
   if(event.type.startsWith('charge.dispute.')||event.type==='radar.early_fraud_warning.created'){
     if(!disputesEnabled)throw Error('Test dispute receiver not activated');
@@ -172,8 +188,10 @@ function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnable
   }
   if(event.type.startsWith('refund.')){
     if(!refundsEnabled)throw Error('Test refund receiver not activated');
+    const ownedRefund=['rack_relic_test_refund','rack_relic_test_refund_acceptance_v1'].includes(s.metadata?.integration);
+    if(ownedRefund&&(s.metadata.integration!==integrationTag(environment,'rack_relic_test_refund')||!matchesEnvironmentMetadata(s.metadata,environment)))throw Error('Refund environment mismatch');
     const payload={...common,p_refund:s.id,p_payment_intent:s.payment_intent,p_charge:s.charge,p_amount:s.amount,p_currency:s.currency,p_status:s.status,p_created:event.created};
-    if(refundRequestsEnabled)payload.p_request=s.metadata?.integration==='rack_relic_test_refund'?s.metadata.request_id:null;
+    if(refundRequestsEnabled)payload.p_request=ownedRefund?s.metadata.request_id:null;
     return {name:refundRequestsEnabled?'rr_test_process_refund_receipt':'rr_test_process_refund',payload};
   }
   const payload={...common,p_order:s.client_reference_id,p_session:s.id,p_amount:s.amount_total,p_currency:s.currency,p_paid:s.payment_status==='paid'&&s.status==='complete'};
@@ -182,8 +200,8 @@ function stripeTestEventRpc(event,raw,{refundsEnabled=false,refundRequestsEnable
 }
 // Call only with a verified event and an immutable order loaded from the DB.
 // The success URL alone must NEVER mark an order paid.
-function matchesPaidTestOrder(event,order){
-  const s=event?.data?.object;
-  return !!(order?.test===true&&event?.livemode===false&&['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&s?.livemode===false&&s.payment_status==='paid'&&s.status==='complete'&&s.mode==='payment'&&s.currency==='usd'&&s.metadata?.integration==='rack_relic_test'&&s.id===order.sessionId&&s.client_reference_id===order.orderId&&s.metadata?.order_id===order.orderId&&s.amount_total===order.totalCents);
+function matchesPaidTestOrder(event,order,{accountId=TEST_ENVIRONMENTS.legacy.accountId}={}){
+  const environment=stripeEnvironment(accountId),s=event?.data?.object;
+  return !!(order?.test===true&&event?.livemode===false&&(!event.account||event.account===environment.accountId)&&['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&s?.livemode===false&&s.payment_status==='paid'&&s.status==='complete'&&s.mode==='payment'&&s.currency==='usd'&&s.metadata?.integration===integrationTag(environment,'rack_relic_test')&&matchesEnvironmentMetadata(s.metadata,environment)&&s.id===order.sessionId&&s.client_reference_id===order.orderId&&s.metadata?.order_id===order.orderId&&s.amount_total===order.totalCents);
 }
 module.exports={buildTestOrderBase,buildTestCheckout,createStripeTestCheckoutClient,verifyStripeTestEvent,stripeTestEventRpc,matchesPaidTestOrder};

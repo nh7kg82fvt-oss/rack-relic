@@ -1,3 +1,5 @@
+const ENV_ROWS=require('../test-environments.js');
+const LEGACY_CONFIG={environmentId:ENV_ROWS[0].id,projectUrl:ENV_ROWS[0].projectUrl,returnUrl:ENV_ROWS[0].returnUrl};
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const O='11111111-1111-4111-8111-111111111111',M='22222222-2222-4222-8222-222222222222',S='33333333-3333-4333-8333-333333333333',T='44444444-4444-4444-8444-444444444444',P='55555555-5555-4555-8555-555555555555',R='66666666-6666-4666-8666-666666666666';
@@ -9,7 +11,7 @@ function setup({enabled=true,allowed=true,initial=review(),savedLocal=[],waitRev
  const element=tag=>({tag,children:[],textContent:'',value:'',checked:false,hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);},storage=map=>({getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)});
  const fetch=async(url,options)=>{calls.push({url,options});
-  if(url.endsWith('config'))return Response.json({settlementSimulationEnabled:enabled==='absent'?undefined:enabled,publishableKey:'test',notice:'Private fixture',listing:{id:O}});
+  if(url.endsWith('config'))return Response.json({...LEGACY_CONFIG,settlementSimulationEnabled:enabled==='absent'?undefined:enabled,publishableKey:'test',notice:'Private fixture',listing:{id:O}});
   if(url.endsWith('orders'))return Response.json({orders:[{id:O,buyer_id:M,seller_id:S,state:'paid',total_cents:3175,refund_state:'none',listing_id:O}]});
   if(url.endsWith('refund-access'))return allowed?Response.json({test:true,allowed:true}):Response.json({error:'Operator access required'},{status:403});
   if(url.endsWith('refund-review'))return Response.json({test:true,hasMore:false,requests:[]});
@@ -26,6 +28,7 @@ function setup({enabled=true,allowed=true,initial=review(),savedLocal=[],waitRev
   throw Error('Unexpected request '+url);
  };
  const context={document:{getElementById:get,createElement:element},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:storage(session),localStorage:storage(local),createTestEmailSignin:()=>({}),createTestRefundRequests:()=>({current:()=>null}),crypto:{randomUUID:()=>uuids[n++]},URL,URLSearchParams,Intl,AbortSignal,fetch};
+ context.RackRelicTestEnvironments=ENV_ROWS;
  vm.runInNewContext(fs.readFileSync(require.resolve('../test-marketplace.js'),'utf8'),context);
  const walk=n=>[n,...n.children.flatMap(walk)],all=()=>walk(get('orders')),find=text=>all().find(n=>n.textContent===text),posts=()=>calls.filter(c=>c.options?.method==='POST'&&c.url.includes('settlement-sim'));
  return {get,all,find,calls,posts,local,setReview:v=>latest=v,revoke:()=>readError=true,waitReview:v=>reviewWait=v,waitStart:v=>startWait=v,waitReconcile:v=>reconcileWait=v,uuidCount:()=>n};

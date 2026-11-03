@@ -1,6 +1,5 @@
 'use strict';
-const STAGING_ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
-const BRANCH='test-only-marketplace-foundation';
+const {getTestEnvironmentByBranch,selectTestEnvironment}=require('./test_environment_registry.cjs');
 const EMPTY_MEMBER='00000000-0000-4000-8000-000000000000';
 function send(res,status,body){
  for(const [k,v] of Object.entries({'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','CDN-Cache-Control':'no-store','Vercel-CDN-Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}))res.setHeader(k,v);
@@ -10,12 +9,13 @@ function send(res,status,body){
 // operation is exposed. Keep Vercel Standard Protection enabled on previews.
 function createTestSetupStatus({env=process.env,fetchImpl=globalThis.fetch}={}){
  return async(req,res)=>{
-  if(env.VERCEL_ENV!=='preview'||env.VERCEL_GIT_COMMIT_REF!==BRANCH){send(res,404,{error:'Not found'});return;}
+  if(env.VERCEL_ENV!=='preview'||!getTestEnvironmentByBranch(env.VERCEL_GIT_COMMIT_REF)){send(res,404,{error:'Not found'});return;}
   if(req.method!=='GET'){res.setHeader('Allow','GET');send(res,405,{error:'Method not allowed'});return;}
   const dbKey=env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY;
   const stripeKey=env.RACK_RELIC_TEST_STRIPE_KEY;
   const expectedAccount=env.RACK_RELIC_TEST_STRIPE_ACCOUNT;
-  if(env.RACK_RELIC_TEST_SUPABASE_URL!==STAGING_ORIGIN||
+  const environment=selectTestEnvironment({branch:env.VERCEL_GIT_COMMIT_REF,projectUrl:env.RACK_RELIC_TEST_SUPABASE_URL,accountId:expectedAccount});
+  if(!environment||
    typeof dbKey!=='string'||!/^sb_secret_[A-Za-z0-9_-]+$/.test(dbKey)||
    typeof stripeKey!=='string'||! /^(sk|rk)_test_[A-Za-z0-9]+$/.test(stripeKey)||
    typeof expectedAccount!=='string'||!/^acct_[A-Za-z0-9]+$/.test(expectedAccount)){
@@ -31,7 +31,7 @@ function createTestSetupStatus({env=process.env,fetchImpl=globalThis.fetch}={}){
   const checks={database:'unavailable',stripe:'unavailable'};
   await Promise.all([
    (async()=>{try{
-    const rows=await json(STAGING_ORIGIN+'/rest/v1/rpc/rr_test_member_orders',{method:'POST',headers:{apikey:dbKey,Authorization:'Bearer '+dbKey,'Content-Type':'application/json'},body:JSON.stringify({p_member:EMPTY_MEMBER})});
+    const rows=await json(environment.projectUrl+'/rest/v1/rpc/rr_test_member_orders',{method:'POST',headers:{apikey:dbKey,Authorization:'Bearer '+dbKey,'Content-Type':'application/json'},body:JSON.stringify({p_member:EMPTY_MEMBER})});
     if(!Array.isArray(rows)||rows.length!==0)throw Error('Unexpected verification result');
     checks.database='connected';
    }catch{}})(),

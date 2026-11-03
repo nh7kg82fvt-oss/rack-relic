@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createTestSetupStatus}=require('../server/test_setup_status.cjs');
-const env={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'test-only-marketplace-foundation',RACK_RELIC_TEST_SUPABASE_URL:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',RACK_RELIC_TEST_SUPABASE_SERVER_KEY:'sb_secret_syntheticFixture',RACK_RELIC_TEST_STRIPE_KEY:'sk_test_syntheticFixture',RACK_RELIC_TEST_STRIPE_ACCOUNT:'acct_syntheticFixture'};
+const env={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'test-only-marketplace-foundation',RACK_RELIC_TEST_SUPABASE_URL:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',RACK_RELIC_TEST_SUPABASE_SERVER_KEY:'sb_secret_syntheticFixture',RACK_RELIC_TEST_STRIPE_KEY:'sk_test_syntheticFixture',RACK_RELIC_TEST_STRIPE_ACCOUNT:'acct_1UWJZuGVbz9Pnhxd'};
 const response=data=>({ok:true,headers:{get:()=>null},json:async()=>data});
 function transport(overrides={}){
  return async(url,options)=>{

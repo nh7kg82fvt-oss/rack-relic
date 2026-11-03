@@ -14,7 +14,8 @@ function request(kind='transfer',known=false){
 }
 const metadata=q=>({integration:'rack_relic_test_settlement',platform_id:PLATFORM,request_id:q.requestId,order_id:O,seller_id:S,kind:q.kind,...(q.parentRequestId?{parent_request_id:q.parentRequestId}:{})});
 function fixture(config={}){
- const calls=[];
+ const calls=[],environment=config.environment;
+ const remap=value=>{if(!environment)return value;if(Array.isArray(value))return value.map(remap);if(!value||typeof value!=='object')return value;const out=Object.fromEntries(Object.entries(value).map(([k,v])=>[k,remap(v)]));if(out.object==='account'&&out.id===PLATFORM)out.id=environment.accountId;if(out.metadata){out.metadata.rr_test_environment=environment.id;if(out.metadata.integration==='rack_relic_test_settlement')out.metadata.integration+='_acceptance_v1';if(out.metadata.platform_id===PLATFORM)out.metadata.platform_id=environment.accountId;if(out.metadata.rr_test_platform===PLATFORM)out.metadata.rr_test_platform=environment.accountId;}return out;};
  const transfer={object:'transfer',id:'tr_fixture',livemode:false,amount:2000,currency:'usd',destination:ACCOUNT,source_transaction:'ch_fixture',transfer_group:'rr_test_'+O,
   amount_reversed:0,reversed:false,balance_transaction:'txn_transfer',metadata:metadata(request())};
  const bank={object:'bank_account',id:'ba_fixture',account:ACCOUNT,country:'US',currency:'usd',default_for_currency:true,status:'new',available_payout_methods:['standard'],routing_number:'private routing',account_holder_name:'private person'};
@@ -22,7 +23,7 @@ function fixture(config={}){
   status:'pending',balance_transaction:'txn_payout',failure_balance_transaction:null,failure_code:null,metadata:metadata(request('payout'))};
  const reversal={object:'transfer_reversal',id:'trr_fixture',amount:300,currency:'usd',transfer:'tr_fixture',balance_transaction:'txn_reversal',source_refund:null,metadata:metadata(request('reversal'))};
  const balance=(amount)=>({object:'balance',livemode:false,available:[{currency:'usd',amount,source_types:{card:amount}}]});
- const client=createStripeTestSettlementClient({secretKey:'rk_test_fixture',accountId:PLATFORM,clock:()=>NOW,fetchImpl:async(url,options)=>{
+ const client=createStripeTestSettlementClient({secretKey:'rk_test_fixture',accountId:environment?.accountId??PLATFORM,clock:()=>NOW,fetchImpl:async(url,options)=>{
   const u=new URL(url);assert.equal(u.origin,'https://api.stripe.com');assert.equal(options.headers.Authorization,'Bearer rk_test_fixture');assert.equal(options.headers['Stripe-Version'],'2026-10-28.endive');assert.equal(options.cache,'no-store');assert.equal(options.redirect,'error');assert.ok(options.signal);
   calls.push({url,path:u.pathname,options});let data;
   if(u.pathname==='/v1/account')data={object:'account',id:PLATFORM,country:'US'};
@@ -47,7 +48,7 @@ function fixture(config={}){
   assert.ok(data,'Unhandled synthetic request '+u.pathname);
   if(config.httpFailure&&options.method==='POST')return Response.json({error:{code:config.httpFailure.code,message:'private provider rejection'}},{status:config.httpFailure.status});
   if(config.lostResponse&&options.method==='POST')throw Error('private accepted response lost');
-  data=structuredClone(data);if(config.patch)data=config.patch(data,u,options)||data;
+  data=remap(structuredClone(data));if(config.patch)data=config.patch(data,u,options)||data;
   return Response.json(data,{headers:config.headers});
  }});
  return {client,calls,transfer,payout,reversal,bank};
@@ -165,4 +166,19 @@ test('unknown-outcome searches never recreate absent operations or accept duplic
  for(const alter of alterations){const f=fixture({patch(d,u){if(u.pathname==='/v1/transfers'&&u.searchParams.has('limit'))return alter(d);}});await assert.rejects(f.client.findExisting(request()));assert.equal(posts(f).length,0);}
  const foreign=fixture({patch(d,u){if(u.pathname==='/v1/transfers'&&u.searchParams.has('limit'))return {...d,data:d.data.map(v=>({...v,metadata:{...v.metadata,seller_id:B}}))};}});assert.equal(await foreign.client.findExisting(request()),null);assert.equal(posts(foreign).length,0);
  const wrongGet=fixture({patch(d,u){if(u.pathname==='/v1/transfers/tr_fixture')return {...d,destination:'acct_other'};}});await assert.rejects(wrongGet.client.findExisting(request()));assert.equal(posts(wrongGet).length,0);
+});
+
+const acceptance=require('../server/test_environment_registry.cjs').TEST_ENVIRONMENTS.acceptance;
+test('acceptance settlement uses its own platform, metadata and stable namespaces for all money simulations',async()=>{
+ for(const [kind,method]of [['transfer','createTransfer'],['payout','createPayout'],['reversal','createReversal']]){
+  const f=fixture({environment:acceptance}),q=request(kind),r=await f.client[method](q);assert.equal(r.simulationOnly,true);
+  const writes=posts(f);assert.equal(writes.length,1);const form=new URLSearchParams(writes[0].options.body);
+  assert.equal(form.get('metadata[integration]'),'rack_relic_test_settlement_acceptance_v1');assert.equal(form.get('metadata[rr_test_environment]'),acceptance.id);assert.equal(form.get('metadata[platform_id]'),acceptance.accountId);
+  assert.equal(writes[0].options.headers['Idempotency-Key'],'rr_test_settlement_'+kind+'_acceptance_v1_'+q.requestId);
+  const reloaded=fixture({environment:acceptance,patch(d,u){if(kind==='reversal'&&u.pathname==='/v1/transfers/tr_fixture')return {...d,amount_reversed:300};}});assert.equal((await reloaded.client.findExisting(q)).providerId,r.providerId);assert.equal(posts(reloaded).length,0);
+ }
+});
+test('neither approved platform can be used as a recipient and wrong acceptance evidence never reaches a write',async()=>{
+ for(const accountId of [PLATFORM,acceptance.accountId]){const f=fixture({environment:acceptance});await assert.rejects(f.client.createTransfer({...request(),accountId}));assert.equal(f.calls.length,0);}
+ for(const patch of [(d,u)=>u.pathname==='/v1/account'?{...d,id:PLATFORM}:d,(d,u)=>u.pathname.startsWith('/v2/')?{...d,metadata:{...d.metadata,rr_test_environment:'legacy'}}:d,(d,u)=>u.pathname.startsWith('/v1/payment_intents/')?{...d,metadata:{order_id:O}}:d]){const f=fixture({environment:acceptance,patch});await assert.rejects(f.client.createTransfer(request()));assert.equal(posts(f).length,0);}
 });

@@ -67,10 +67,12 @@ See [sandbox settlement and recovery](sandbox-settlement-recovery.md).
    print secrets or raw customer data. Repository prose contains historical
    deployment checkpoints; the current remote state needs fresh verification.
 2. Review and integrate the prepared changes deliberately. The runtime currently
-   accepts only Preview branch `test-only-marketplace-foundation`, the existing
-   isolated staging project and fixed Stripe sandbox. PR #27's own branch cannot
-   run the financial routes through that gate. A successful PR preview build does
-   not install its database changes or activate its checkout.
+   now selects one complete immutable legacy or acceptance tuple. The new
+   acceptance tuple binds PR #27's fixed Preview origin, database project
+   `tzymapahsfiyhgilsmxl` and Stripe sandbox `acct_1UXdWBGppSOhWnq8`. The
+   original tuple remains unchanged; mixed targets fail before provider access.
+   A successful PR preview build does not install migrations, secrets or flags
+   or activate checkout. The new credentials/users/owner still need binding.
 3. Preserve the separate site-testing checkout and monitor. Do not change shared
    staging behavior without coordinating the installation and test window. Use
    the ordered dependencies in [private-preview-activation.md](private-preview-activation.md),
@@ -138,6 +140,8 @@ that either ceiling is affordable or protects the business from losses.
 | Tax accounting | Test quote calculation and historical sandbox registration/calculation evidence exist. Tax-recording/refund-tax jobs remain held. | Resolve live marketplace obligations, registrations and item/buyer-fee/shipping tax classification. Implement and test transaction recording, partial/full refund reversals, ledger reconciliation and filing/remittance ownership. Calculated tax alone is not completed tax settlement or compliance. |
 | Support, disputes and notices | Local structured buyer issue, operator acknowledgment, seller response, refund-readiness and sticky dispute holds exist. Chat-assisted review is read-only. | Hosted participant isolation, deadline tracking, evidence/return/support procedure and production admin authority. Implement actual receipt/shipping/urgent notices with privacy and delivery-failure handling. Closed/won dispute, acknowledgment or clear score alone cannot remove all holds. |
 | Monitoring and operational readiness | The local setup monitor remains every four hours. An enabled hourly cloud website monitor gates readiness checks to every four hours; initial cloud HTTP checks passed, while autonomous timer dispatch and live private access remain unverified. New source tests case/deadline outbox, pagination, leases and delivery gaps without a scheduler or transport. None supplies continuous staffed coverage or financial authority. | Install and verify the case/outbox schema, actual cloud dispatch, authenticated live case access and notification delivery/reconciliation. Test immediate verified provider alerts and durable holds, approximately 15-minute assisted flagged-case checks, alert delivery/failure, named urgent-response ownership and escalation. Faster cadence is a launch requirement, not currently running. Higher volume requires staffed response capacity. |
+| Owner operations dashboard | Source-only private test screen and service-role projection, with one configured owner UUID, actual provider observation times, bounded queues and no money controls. | Install and accept owner-only access, denial of another operator, visible/focused polling, revocation/late responses, stale/missing feeds and provider data bindings. A locked public shell has no private panels. Build and accept separate production owner authority and real operational feeds; the page cannot replace backend alerts while closed. |
+| Database/photo recovery | Pro upgrade and isolated empty branch are verified. Source-only immutable private photo snapshots, authenticated manifests, isolated drills and read-only restored-order/provider reconciliation have local tests. | Verify actual Pro backup availability and a real isolated SQL restore; install private independently credentialed retained photo archive and daily cloud job/alerts, prove matching listing/photo recovery and privacy, and reconcile complete provider history under a durable recovery hold before resuming writes. No archive transport, scheduler, SQL restore or durable recovery gate is installed by those source tests. |
 | Funds, policies and launch approval | Draft seller rules and money-release blockers exist; no funded reserve is invented in source. The separate marketplace agreement remains held in this work. | Verify available Stripe/business funds against outstanding liabilities, define an affordable reserve/recovery rule, finalize clear fees/returns/dispute/eligibility terms and authenticated acceptance, and complete production configuration review. The owner makes the final marketplace-agreement and launch decisions; test success is not authorization. |
 
 ## What a sandbox can establish
@@ -207,3 +211,20 @@ Primary launch guidance:
 [separate charges and transfers](https://docs.stripe.com/connect/separate-charges-and-transfers),
 [marketplace refunds and disputes](https://docs.stripe.com/connect/marketplace/tasks/refunds-disputes),
 [webhook security and delivery](https://docs.stripe.com/webhooks).
+
+## November 3 infrastructure and recovery checkpoint
+
+The existing Vercel-managed organization now shows Supabase Pro, $35/month
+excluding overages plus applicable tax/fees, with both original databases
+connected. Temporary branch `payment-acceptance` (`tzymapahsfiyhgilsmxl`) was
+created under the already approved $0.01344/hour allowance; initial read-only
+counts show zero orders/events/ledger/jobs/users/objects. The new Stripe sandbox
+is API-verified in test mode, with test Connect and explicitly fictional tax
+fixtures configured. This is infrastructure preparation, not hosted current-flow
+acceptance. Preserve all legacy records and the separate website checkout.
+
+See [backup/recovery](backup-recovery.md) and [private owner
+overview](private-admin-overview.md) for concrete source contracts and missing
+installation evidence. Neither a verified backup nor the admin screen guarantees
+chargeback recovery. The sole owner must be bound to a freshly verified private
+Auth UUID; an email address or Stripe team membership is not website admin authority.

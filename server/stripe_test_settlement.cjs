@@ -1,8 +1,10 @@
 'use strict';
+const {getTestEnvironmentByAccount}=require('./test_environment_registry.cjs');
+const {stripeEnvironment,integrationTag,environmentMetadata,matchesEnvironmentMetadata,idempotencyKey}=require('./test_stripe_environment.cjs');
 // Server adapter for explicitly authorized sandbox simulations only. Its
 // caller must obtain a single durable database dispatch claim first. A browser
 // assertion or this module's input validation is never release authority.
-const ACCOUNT='acct_1UWJZuGVbz9Pnhxd',VERSION='2026-10-28.endive';
+const VERSION='2026-10-28.endive';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IDS={account:/^acct_[A-Za-z0-9]+$/,transfer:/^tr_[A-Za-z0-9]+$/,payout:/^po_[A-Za-z0-9]+$/,reversal:/^trr_[A-Za-z0-9]+$/,transaction:/^txn_[A-Za-z0-9]+$/,bank:/^ba_[A-Za-z0-9]+$/};
 const integer=(v,max=30000000)=>Number.isSafeInteger(v)&&v>=0&&v<=max;
@@ -12,7 +14,7 @@ class SettlementProviderError extends Error{
 const error=(code)=>new SettlementProviderError(code);
 function validateBinding(q){
  if(q?.test!==true||q.simulationOnly!==true||!UUID.test(q.orderId||'')||!UUID.test(q.sellerId||'')
-  ||!IDS.account.test(q.accountId||'')||q.accountId===ACCOUNT)throw error();
+  ||!IDS.account.test(q.accountId||'')||getTestEnvironmentByAccount(q.accountId))throw error();
 }
 function snapshot(request,kind,creating){
  const q=Object.freeze({...request});validateBinding(q);
@@ -31,7 +33,8 @@ function snapshot(request,kind,creating){
  return q;
 }
 function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalThis.fetch,clock=Date.now}={}){
- if(accountId!==ACCOUNT||!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(secretKey||'')||typeof fetchImpl!=='function'||typeof clock!=='function')throw Error('Rack Relic sandbox credentials required');
+ const environment=stripeEnvironment(accountId),ACCOUNT=environment.accountId;
+ if(!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(secretKey||'')||typeof fetchImpl!=='function'||typeof clock!=='function')throw Error('Rack Relic sandbox credentials required');
  async function call(path,{connected,body,key}={}){
   let r;try{r=await fetchImpl('https://api.stripe.com'+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{Authorization:'Bearer '+secretKey,'Stripe-Version':VERSION,...(connected?{'Stripe-Account':connected}:{}),...(body?{'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':key}:{})},...(body?{body:body.toString()}:{})});}catch{throw error();}
   const age=r.headers?.get('age');
@@ -67,7 +70,7 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
   const a=await call('/v2/core/accounts/'+q.accountId+'?'+fields);
   const status=a?.configuration?.recipient?.capabilities?.stripe_balance?.stripe_transfers?.status;
   if(a?.object!=='v2.core.account'||a.id!==q.accountId||a.livemode!==false||!/^us$/i.test(a.identity?.country||'')
-   ||a.metadata?.rr_test_seller_id!==q.sellerId||a.metadata?.rr_test_platform!==ACCOUNT
+   ||a.metadata?.rr_test_seller_id!==q.sellerId||a.metadata?.rr_test_platform!==ACCOUNT||!matchesEnvironmentMetadata(a.metadata,environment)
    ||!Array.isArray(a.applied_configurations)||!a.applied_configurations.includes('recipient')
    ||!['active','pending','restricted','unsupported','rejected'].includes(status)
    ||active&&(status!=='active'||a.dashboard!=='express'||a.defaults?.responsibilities?.fees_collector!=='application'||a.defaults?.responsibilities?.losses_collector!=='application'))throw error();
@@ -81,12 +84,12 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
   return available;
  }
  function matchesMetadata(v,q,kind=q.kind,requestId=q.requestId,parent=q.parentRequestId){
-  return v?.integration==='rack_relic_test_settlement'&&v.platform_id===ACCOUNT&&v.request_id===requestId
+  return v?.integration===integrationTag(environment,'rack_relic_test_settlement')&&matchesEnvironmentMetadata(v,environment)&&v.platform_id===ACCOUNT&&v.request_id===requestId
    &&v.order_id===q.orderId&&v.seller_id===q.sellerId&&v.kind===kind
    &&(parent==null?v.parent_request_id==null:v.parent_request_id===parent);
  }
  function metadata(q){
-  return {'metadata[integration]':'rack_relic_test_settlement','metadata[platform_id]':ACCOUNT,'metadata[request_id]':q.requestId,
+  return {'metadata[integration]':integrationTag(environment,'rack_relic_test_settlement'),...Object.fromEntries(Object.entries(environmentMetadata(environment)).map(([k,v])=>['metadata['+k+']',v])),'metadata[platform_id]':ACCOUNT,'metadata[request_id]':q.requestId,
    'metadata[order_id]':q.orderId,'metadata[seller_id]':q.sellerId,'metadata[kind]':q.kind,...(q.parentRequestId?{'metadata[parent_request_id]':q.parentRequestId}:{})};
  }
  function transfer(t,q,{parent=false}={}){
@@ -109,7 +112,7 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
  async function paidCharge(q){
   const p=await call('/v1/payment_intents/'+q.paymentIntentId);
   if(p?.id!==q.paymentIntentId||p.livemode!==false||p.status!=='succeeded'||p.currency!=='usd'||p.amount!==q.totalCents||p.amount_received!==q.totalCents
-   ||p.latest_charge!==q.chargeId||p.metadata?.order_id!==q.orderId||p.transfer_group!==q.transferGroup||p.transfer_data||p.application_fee_amount||p.on_behalf_of)throw error();
+   ||p.latest_charge!==q.chargeId||p.metadata?.order_id!==q.orderId||!matchesEnvironmentMetadata(p.metadata,environment)||p.transfer_group!==q.transferGroup||p.transfer_data||p.application_fee_amount||p.on_behalf_of)throw error();
   const c=await call('/v1/charges/'+q.chargeId);
   if(c?.object!=='charge'||c.id!==q.chargeId||c.payment_intent!==q.paymentIntentId||c.livemode!==false||c.status!=='succeeded'||c.paid!==true||c.captured!==true
    ||c.disputed!==false||c.refunded!==false||c.amount_refunded!==0||c.currency!=='usd'||c.amount!==q.totalCents||c.amount_captured!==q.totalCents
@@ -207,7 +210,7 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
    const retained=q.totalCents-q.maxTransferCents;if(retained<charge.fee)throw error();
    if(available<q.amountCents+retained-charge.fee+(q.platformReserveCents??0))throw error('provider_balance_insufficient');
    const form=new URLSearchParams({amount:String(q.amountCents),currency:'usd',destination:q.accountId,source_transaction:q.chargeId,transfer_group:q.transferGroup,...metadata(q)});
-   return transferEvidence(await call('/v1/transfers',{body:form,key:'rr_test_settlement_transfer_'+q.requestId}),q);
+   return transferEvidence(await call('/v1/transfers',{body:form,key:idempotencyKey(environment,'rr_test_settlement_transfer_',q.requestId)}),q);
   },
   async retrieveTransfer(request){const q=snapshot(request,'transfer',false);await platform();await connected(q);return transferEvidence(await call('/v1/transfers/'+q.providerId),q);},
   async createPayout(request){
@@ -216,7 +219,7 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
    if(q.amountCents>parent.amount-parent.amount_reversed)throw error();
    if(available<q.amountCents+(q.payoutFeeReserveCents??0))throw error('provider_balance_insufficient');await bank(q,q.bankAccountId);
    const form=new URLSearchParams({amount:String(q.amountCents),currency:'usd',destination:q.bankAccountId,method:'standard',source_type:'card',...metadata(q)});
-   return payoutEvidence(await call('/v1/payouts',{connected:q.accountId,body:form,key:'rr_test_settlement_payout_'+q.requestId}),q);
+   return payoutEvidence(await call('/v1/payouts',{connected:q.accountId,body:form,key:idempotencyKey(environment,'rr_test_settlement_payout_',q.requestId)}),q);
   },
   async retrievePayout(request){
    const q=snapshot(request,'payout',false);await platform();await connected(q);transfer(await call('/v1/transfers/'+q.parentProviderId),q,{parent:true});
@@ -227,7 +230,7 @@ function createStripeTestSettlementClient({secretKey,accountId,fetchImpl=globalT
    if(q.amountCents>parent.amount-parent.amount_reversed)throw error();
    if(available<q.amountCents)throw error('provider_balance_insufficient');
    const form=new URLSearchParams({amount:String(q.amountCents),...metadata(q)});
-   return reversalEvidence(await call('/v1/transfers/'+q.parentProviderId+'/reversals',{body:form,key:'rr_test_settlement_reversal_'+q.requestId}),q);
+   return reversalEvidence(await call('/v1/transfers/'+q.parentProviderId+'/reversals',{body:form,key:idempotencyKey(environment,'rr_test_settlement_reversal_',q.requestId)}),q);
   },
   async retrieveReversal(request){
    const q=snapshot(request,'reversal',false);await platform();await connected(q);const parent=transfer(await call('/v1/transfers/'+q.parentProviderId),q,{parent:true});

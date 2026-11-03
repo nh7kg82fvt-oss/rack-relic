@@ -1,3 +1,5 @@
+const ENV_ROWS=require('../test-environments.js');
+const LEGACY_CONFIG={environmentId:ENV_ROWS[0].id,projectUrl:ENV_ROWS[0].projectUrl,returnUrl:ENV_ROWS[0].returnUrl};
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const review=require('../test-seller-cost-review.js');
@@ -33,7 +35,7 @@ function setup({enabled=true,seller=true,replies=[],prepareReply=quoted(),accept
  const element=tag=>({tag,children:[],textContent:'',value:'',checked:false,hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);},storage={getItem:k=>saved.get(k)??null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)};
  const fetch=async(url,options)=>{calls.push({url,options});
-  if(url.endsWith('config'))return Response.json({sellerCostsEnabled:enabled==='absent'?undefined:enabled,publishableKey:'test',notice:'Private fixture',listing:{id:O}});
+  if(url.endsWith('config'))return Response.json({...LEGACY_CONFIG,sellerCostsEnabled:enabled==='absent'?undefined:enabled,publishableKey:'test',notice:'Private fixture',listing:{id:O}});
   if(url.endsWith('orders'))return Response.json({orders:[{id:O,buyer_id:seller?B:S,seller_id:seller?S:B,state:'paid',total_cents:3175,refund_state:'none',listing_id:O}]});
   if(url.endsWith('refund-access'))return Response.json({error:'not an operator'},{status:403});
   if(url.includes('action=seller-cost-review')){if(waitRead)await waitRead;return Response.json(replies[Math.min(reads++,replies.length-1)]||result());}
@@ -42,6 +44,7 @@ function setup({enabled=true,seller=true,replies=[],prepareReply=quoted(),accept
   throw Error('Unexpected request '+url);
  };
  const context={RackRelicSellerCostReview:review,document:{getElementById:get,createElement:element},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:storage,localStorage:storage,createTestEmailSignin:()=>({}),crypto:{randomUUID:()=>B},URL,URLSearchParams,Intl,AbortSignal,fetch};
+ context.RackRelicTestEnvironments=ENV_ROWS;
  vm.runInNewContext(fs.readFileSync(require.resolve('../test-marketplace.js'),'utf8'),context);
  const walk=n=>[n,...n.children.flatMap(walk)],all=()=>walk(get('orders')),find=text=>all().find(n=>n.textContent===text),posts=()=>calls.filter(c=>c.options?.method==='POST');
  return {get,all,find,calls,posts,consent:()=>all().find(n=>n.tag==='input'&&n.type==='checkbox')};

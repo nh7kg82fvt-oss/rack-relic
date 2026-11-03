@@ -1,17 +1,19 @@
+const ENV_ROWS=require('../test-environments.js');
+const LEGACY_CONFIG={environmentId:ENV_ROWS[0].id,projectUrl:ENV_ROWS[0].projectUrl,returnUrl:ENV_ROWS[0].returnUrl};
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const {createTestRefundRequests}=require('../test-refund-requests.js');
 const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
 const protection=require('../test-protection-review.js');
 const MEMBER='22222222-2222-4222-8222-222222222222',ORDER='11111111-1111-4111-8111-111111111111',REQUEST='44444444-4444-4444-8444-444444444444';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({sellerProtectionsEnabled=false,protectionReply,delayedProtection,delayedHold,issueRefundReviewEnabled=false,issueRefundReviewReply,delayedIssueRefundReview,issueResponsesEnabled=false,delayedThreadRead,delayedThreadWrite,threadReply,issueReviewEnabled=false,delayedIssueReview,delayedIssueAck,issueReviewReply,orderIssuesEnabled=false,delayedIssue,issueReply,sellerOnboardingEnabled=false,sellerReply,delayedSeller,allowed=false,trackingEnabled=false,trackingReply,delayedTracking,riskCheckEnabled=false,riskReply,delayedRisk,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
+function setup({adminAccessAllowed=false,adminOverviewEnabled=false,environmentConfig=LEGACY_CONFIG,sellerProtectionsEnabled=false,protectionReply,delayedProtection,delayedHold,issueRefundReviewEnabled=false,issueRefundReviewReply,delayedIssueRefundReview,issueResponsesEnabled=false,delayedThreadRead,delayedThreadWrite,threadReply,issueReviewEnabled=false,delayedIssueReview,delayedIssueAck,issueReviewReply,orderIssuesEnabled=false,delayedIssue,issueReply,sellerOnboardingEnabled=false,sellerReply,delayedSeller,allowed=false,trackingEnabled=false,trackingReply,delayedTracking,riskCheckEnabled=false,riskReply,delayedRisk,sampleLabelsEnabled=false,labelReply,delayedLabel,labelError=false,delayedOrders,delayedCheckout,delayedCancel,delayedReview,reviewRequests=[],reviewError=false,delayedFee,feeReply,delayedShipping,shippingReply,shippingMode,delayedFulfillment,fulfillmentReply,hasMore=false,noOrders=false,listingId=ORDER,priorOrders={},orderPatch={}}={}){
  const nodes=new Map(),calls=[],saved=new Map([['rr-private-test-session',JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'})]]),local=new Map();for(const [k,v] of Object.entries(priorOrders))saved.set(k,v);
  const element=tag=>({tag,children:[],textContent:'',value:'',hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(name,fn){this.events[name]=fn;},reportValidity(){return true;},fire(name='click'){return this.events[name]?.({preventDefault(){}});}});
  const get=id=>{if(!nodes.has(id))nodes.set(id,element('div'));return nodes.get(id);};
  const storage=map=>({getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)});
  let threadResponse=null,savedIssue=null,issueAcknowledged=false;let reads=0;const order={id:ORDER,buyer_id:MEMBER,seller_id:'33333333-3333-4333-8333-333333333333',state:'paid',total_cents:3427,refund_state:'none',refunded_cents:0,refund_pending_cents:0,listing_id:listingId,...orderPatch};
  const fetch=async(url,options)=>{
-  calls.push({url,options});if(url.endsWith('config'))return Response.json({sellerProtectionsEnabled,issueRefundReviewEnabled,issueResponsesEnabled,issueReviewEnabled,orderIssuesEnabled,sellerOnboardingEnabled,notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,riskCheckEnabled,trackingEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
+  calls.push({url,options});if(url==='/api/test-admin?action=access')return Response.json({test:true,allowed:allowed&&adminAccessAllowed});if(url.endsWith('config'))return Response.json({...environmentConfig,adminOverviewEnabled,sellerProtectionsEnabled,issueRefundReviewEnabled,issueResponsesEnabled,issueReviewEnabled,orderIssuesEnabled,sellerOnboardingEnabled,notice:'fixture',publishableKey:'fixture',shippingMode,sampleLabelsEnabled,riskCheckEnabled,trackingEnabled,listing:{id:listingId,title:'Synthetic fixture'}});
   if(url.includes('action=protection-review')){if(delayedProtection)await delayedProtection;return Response.json(protectionReply||{test:true,orderId:ORDER,state:'held',blockers:['live_acceptance_pending','real_delivery_unverified','delivery_wait_unverified','seller_terms_pending','platform_reserve_unconfigured','tax_recovery_unverified','settlement_unavailable'],releaseEnabled:false,transferCreated:false,payoutCreated:false});}
   if(url.includes('action=protection-hold')){if(delayedHold)await delayedHold;return Response.json({test:true,orderId:ORDER,held:true,releaseEnabled:false});}
   if(url.includes('action=issue-refund-review')){if(delayedIssueRefundReview)await delayedIssueRefundReview;return Response.json(issueRefundReviewReply||{test:true,orderId:ORDER,state:'available_for_review',totalCents:3427,confirmedCents:0,pendingCents:0,unconfirmedRequestCount:0,remainingCents:3427,canPrepare:true,fulfillmentReleased:false});}
@@ -34,6 +36,7 @@ function setup({sellerProtectionsEnabled=false,protectionReply,delayedProtection
   throw Error('Unexpected URL '+url);
  };
  const context={RackRelicProtectionReview:protection,publicTestIssueRefundReview:publicIssueRefundReview,document:{getElementById:get,createElement:element},location:{search:'',hash:'',pathname:'/api/test-marketplace',assign:url=>calls.push({redirect:url})},history:{replaceState(){}},sessionStorage:storage(saved),localStorage:storage(local),createTestEmailSignin:()=>({}),createTestRefundRequests:args=>createTestRefundRequests({...args,uuid:()=>REQUEST}),crypto:{randomUUID:()=>REQUEST},URL,URLSearchParams,Intl,AbortSignal,fetch};
+ context.RackRelicTestEnvironments=ENV_ROWS;
  vm.runInNewContext(fs.readFileSync(require.resolve('../test-marketplace.js'),'utf8'),context);
  const walk=n=>[n,...n.children.flatMap(walk)];return {get,calls,saved,local,order,setAllowed:value=>allowed=value,issueReviewAll:()=>walk(get('issue-review-rows')),reviewAll:()=>walk(get('refund-review-rows')),all:()=>walk(get('orders'))};
 }
@@ -43,6 +46,28 @@ test('ordinary members never see operator controls; configured operators review 
  let form=operator.all().find(n=>n.tag==='form');form.children.find(n=>n.tag==='input').value='10.00';await form.fire('submit');await tick();
  assert.equal(operator.calls.filter(c=>c.options?.method==='POST').length,0);const issue=operator.all().find(n=>n.textContent==='Issue $10.00 test refund');assert.ok(issue);await issue.fire();await tick();
  const posts=operator.calls.filter(c=>c.options?.method==='POST');assert.equal(posts.length,1);assert.deepEqual(JSON.parse(posts[0].options.body),{requestId:REQUEST,orderId:ORDER,amountCents:1000});assert.ok(operator.all().some(n=>n.textContent==='Check saved refund request'));assert.equal(operator.all().some(n=>n.textContent==='Full test refund confirmed'),false);
+});
+test('mixed browser configuration fails before stored sessions or authentication are used',async()=>{
+ const acceptance=ENV_ROWS.find(row=>row.id==='acceptance-v1');
+ const ui=setup({environmentConfig:{...LEGACY_CONFIG,returnUrl:acceptance.returnUrl}});await tick();
+ assert.equal(ui.calls.length,1);assert.match(ui.get('notice').textContent,/environment is unavailable/);
+ assert.equal(ui.get('login').disabled,true);assert.equal(ui.get('email-link').disabled,true);assert.equal(ui.get('orders').children.length,0);
+});
+test('admin overview link requires the explicit flag and current operator access and disappears on revocation',async()=>{
+ for(const options of [{allowed:true},{adminOverviewEnabled:true},{allowed:true,adminOverviewEnabled:true}]){const ui=setup(options);await tick();assert.equal(ui.get('admin-link').hidden,true);}
+ const ui=setup({adminOverviewEnabled:true,allowed:true,adminAccessAllowed:true});await tick();assert.equal(ui.get('admin-link').hidden,false);
+ ui.setAllowed(false);await ui.get('refresh').fire();assert.equal(ui.get('admin-link').hidden,true);
+ ui.setAllowed(true);await ui.get('refresh').fire();assert.equal(ui.get('admin-link').hidden,false);
+ ui.get('logout').fire();assert.equal(ui.get('admin-link').hidden,true);
+});
+test('acceptance browser sessions and durable checkout references cannot consume or erase legacy state',async()=>{
+ const row=ENV_ROWS.find(v=>v.id==='acceptance-v1'),environmentConfig={environmentId:row.id,projectUrl:row.projectUrl,returnUrl:row.returnUrl};
+ const oldSession=JSON.stringify({token:'fixture-token',member:MEMBER,email:'operator@example.com'}),sessionKey='rr-private-test-session:'+row.id,oldOrderKey='rr-private-test-order-'+MEMBER+':'+ORDER;
+ const missing=setup({environmentConfig});await tick();assert.equal(missing.calls.length,1);
+ const ui=setup({environmentConfig,priorOrders:{[sessionKey]:oldSession,[oldOrderKey]:ORDER}});await tick();
+ await ui.get('checkout').fire();const post=ui.calls.find(c=>c.url?.endsWith('checkout'));assert.equal(JSON.parse(post.options.body).orderId,REQUEST);
+ assert.equal(ui.saved.get(oldOrderKey),ORDER);assert.equal(ui.saved.get(oldOrderKey+':'+row.id),REQUEST);
+ ui.get('logout').fire();assert.equal(ui.saved.get('rr-private-test-session'),oldSession);assert.equal(ui.saved.has(sessionKey),false);
 });
 test('stale order responses cannot restore private orders after sign-out',async()=>{
  let release;const pending=new Promise(r=>release=r),ui=setup({delayedOrders:pending});await tick();const refresh=ui.get('refresh').fire();ui.get('logout').fire();release();await refresh;await tick();assert.equal(ui.get('orders').children.length,0);assert.equal(ui.saved.has('rr-private-test-session'),false);assert.equal(ui.get('signed-in').hidden,true);

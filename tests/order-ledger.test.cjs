@@ -82,7 +82,7 @@ test('fresh fraud assessment is required to release shipping; a hold cannot sile
  assert.equal((await db.query('select risk_status from rr_sandbox.orders')).rows[0].risk_status,'review');
 });
 
-function repository(){return createTestOrderRepository({projectUrl:'https://abcdefghijklmnopqrst.supabase.co',serviceKey:'sb_secret_fixture',fetchImpl:async(url,opts)=>{
+function repository(){return createTestOrderRepository({projectUrl:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',serviceKey:'sb_secret_fixture',fetchImpl:async(url,opts)=>{
  if(url.endsWith('/auth/v1/user'))return Response.json(opts.headers.Authorization==='Bearer fixture'?{id:buyer}:{},{status:opts.headers.Authorization==='Bearer fixture'?200:401});
  const name=url.split('/').pop(),p=JSON.parse(opts.body),definitions={
   rr_test_reserve:['p_order','p_listing','p_buyer'],rr_test_member_orders:['p_member'],

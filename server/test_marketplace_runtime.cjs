@@ -34,8 +34,7 @@ const {createTestTrackingService}=require('./test_tracking_service.cjs');
 const {createTestTrackingHandler}=require('./test_tracking_handler.cjs');
 const {createTestSellerOnboarding}=require('./test_seller_onboarding.cjs');
 const {createTestSellerHandler}=require('./test_seller_handler.cjs');
-const ORIGIN='https://zvtaqzcqfdjpuwnlpzln.supabase.co';
-const RETURN='https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app';
+const {getTestEnvironmentByBranch,selectTestEnvironment}=require('./test_environment_registry.cjs');
 const LISTING='73737373-7373-4373-8373-737373737373';
 const LISTINGS=Object.freeze({
  [LISTING]:Object.freeze({id:LISTING,title:'Synthetic test jacket',priceCents:2500}),
@@ -48,29 +47,31 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
  return async(req,res)=>{
   for(const [k,v] of Object.entries({'Cache-Control':'private, no-store, max-age=0','CDN-Cache-Control':'no-store','Vercel-CDN-Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}))res.setHeader(k,v);
   const send=(status,body)=>{res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));};
-  if(env.VERCEL_ENV!=='preview'||env.VERCEL_GIT_COMMIT_REF!=='test-only-marketplace-foundation'){send(404,{error:'Not found'});return;}
+  const preview=getTestEnvironmentByBranch(env.VERCEL_GIT_COMMIT_REF);
+  if(env.VERCEL_ENV!=='preview'||!preview){send(404,{error:'Not found'});return;}
   const action=new URL(req.url,'https://example.invalid').searchParams.get('action');
   if(!action&&req.method==='GET'){
-   res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self' "+ORIGIN+"; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.statusCode=200;res.end(fs.readFileSync(path.join(__dirname,'test-marketplace.html'),'utf8'));return;
+   res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self' "+preview.projectUrl+"; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.statusCode=200;res.end(fs.readFileSync(path.join(__dirname,'test-marketplace.html'),'utf8'));return;
   }
+  const environment=selectTestEnvironment({branch:env.VERCEL_GIT_COMMIT_REF,projectUrl:env.RACK_RELIC_TEST_SUPABASE_URL,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT});
   const members=(env.RACK_RELIC_TEST_MEMBER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
   const selected=env.RACK_RELIC_TEST_LISTING_ID||LISTING;
   const listing=Object.hasOwn(LISTINGS,selected)?LISTINGS[selected]:null;
   const shippingMode=env.RACK_RELIC_TEST_SHIPPING_MODE||'simulated';
   const settlementConfigured=env.RACK_RELIC_TEST_SETTLEMENT_SIMULATION_ENABLED==='true'&&env.RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED==='true'&&env.RACK_RELIC_TEST_SELLER_COSTS_ENABLED==='true'&&env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test';
   const shippingReady=shippingMode==='simulated'||shippingMode==='shippo_test'&&/^shippo_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_SHIPPO_KEY||'')&&env.RACK_RELIC_TEST_QUOTE_LIMITS_ENABLED==='true';
-  const configured=shippingReady&&!!listing&&env.RACK_RELIC_TEST_CHECKOUT_ENABLED==='true'&&env.RACK_RELIC_TEST_SUPABASE_URL===ORIGIN&&members.length===2&&members.every(x=>UUID.test(x))&&/^sb_secret_[A-Za-z0-9_-]+$/.test(env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY||'')&&/^(sk|rk)_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_STRIPE_KEY||'')&&env.RACK_RELIC_TEST_STRIPE_ACCOUNT==='acct_1UWJZuGVbz9Pnhxd';
+  const configured=!!environment&&shippingReady&&!!listing&&env.RACK_RELIC_TEST_CHECKOUT_ENABLED==='true'&&members.length===2&&members.every(x=>UUID.test(x))&&/^sb_secret_[A-Za-z0-9_-]+$/.test(env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY||'')&&/^(sk|rk)_test_[A-Za-z0-9]+$/.test(env.RACK_RELIC_TEST_STRIPE_KEY||'');
   if(action==='config'&&req.method==='GET'){
    const publishable=env.RACK_RELIC_TEST_SUPABASE_PUBLISHABLE_KEY;
    if(!configured||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishable||'')){send(503,{test:true,error:'Private test checkout is being prepared'});return;}
-   send(200,{test:true,settlementSimulationEnabled:settlementConfigured,sellerCostsEnabled:env.RACK_RELIC_TEST_SELLER_COSTS_ENABLED==='true',sellerProtectionsEnabled:env.RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED==='true',issueRefundReviewEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true'&&env.RACK_RELIC_TEST_ISSUE_REFUND_REVIEW_ENABLED==='true',issueResponsesEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true'&&env.RACK_RELIC_TEST_ISSUE_RESPONSES_ENABLED==='true',issueReviewEnabled:env.RACK_RELIC_TEST_ISSUE_REVIEW_ENABLED==='true'&&env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true',orderIssuesEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true',sellerOnboardingEnabled:env.RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED==='true',projectUrl:ORIGIN,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',trackingEnabled:env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
+   send(200,{test:true,environmentId:environment.id,returnUrl:environment.returnUrl,adminOverviewEnabled:env.RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED==='true',settlementSimulationEnabled:settlementConfigured,sellerCostsEnabled:env.RACK_RELIC_TEST_SELLER_COSTS_ENABLED==='true',sellerProtectionsEnabled:env.RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED==='true',issueRefundReviewEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true'&&env.RACK_RELIC_TEST_ISSUE_REFUND_REVIEW_ENABLED==='true',issueResponsesEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true'&&env.RACK_RELIC_TEST_ISSUE_RESPONSES_ENABLED==='true',issueReviewEnabled:env.RACK_RELIC_TEST_ISSUE_REVIEW_ENABLED==='true'&&env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true',orderIssuesEnabled:env.RACK_RELIC_TEST_ORDER_ISSUES_ENABLED==='true',sellerOnboardingEnabled:env.RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED==='true',projectUrl:environment.projectUrl,publishableKey:publishable,listing,shippingMode,sampleLabelsEnabled:env.RACK_RELIC_TEST_LABEL_REQUESTS_ENABLED==='true'&&shippingMode==='shippo_test',riskCheckEnabled:env.RACK_RELIC_TEST_RISK_CHECK_ENABLED==='true',trackingEnabled:env.RACK_RELIC_TEST_TRACKING_ENABLED==='true'&&shippingMode==='shippo_test',notice:shippingMode==='shippo_test'?'Test funds only. Shipping prices come from Shippo test mode and may differ from live prices. Stripe calculates tax in test mode. No real postage is purchased.':'Test funds only. Shipping is a $5 simulation; tax is calculated by Stripe in test mode.'});return;
   }
   if(!configured){send(503,{error:'Private test checkout unavailable'});return;}
   try{
    const operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
    const refundReady=env.RACK_RELIC_TEST_REFUNDS_ENABLED==='true'&&env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED==='true'&&operators.length>0&&operators.length<=2&&operators.every(x=>UUID.test(x)&&members.includes(x));
    if(['settlement-sim-review','settlement-sim-start','settlement-sim-reconcile','protection-review','protection-hold','issue-refund-review','issue-review','refund','refund-access','refund-review','fee','shipping-quote','fulfillment','sample-label','risk','tracking'].includes(action)&&!refundReady){send(404,{error:'Not found'});return;}
-   const repository=createTestOrderRepository({projectUrl:ORIGIN,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators,settlementSimulationEnabled:settlementConfigured&&refundReady,sellerCostsEnabled:env.RACK_RELIC_TEST_SELLER_COSTS_ENABLED==='true',disputesEnabled:env.RACK_RELIC_TEST_DISPUTE_HOLDS_ENABLED==='true'&&env.RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED==='true'});
+   const repository=createTestOrderRepository({projectUrl:environment.projectUrl,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,allowedMemberIds:members,refundsEnabled:refundReady,refundRequestsEnabled:refundReady,allowedRefundOperatorIds:operators,settlementSimulationEnabled:settlementConfigured&&refundReady,sellerCostsEnabled:env.RACK_RELIC_TEST_SELLER_COSTS_ENABLED==='true',disputesEnabled:env.RACK_RELIC_TEST_DISPUTE_HOLDS_ENABLED==='true'&&env.RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED==='true'});
    if(['settlement-sim-review','settlement-sim-start','settlement-sim-reconcile'].includes(action)){
     if(!settlementConfigured){send(404,{error:'Not found'});return;}
     const stripe=createStripeTestSettlementClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT,fetchImpl});
@@ -139,15 +140,18 @@ function createTestMarketplaceRuntime({env=process.env,fetchImpl=globalThis.fetc
    if(action==='orders'){await createTestOrdersHandler({repository,enabled:true})(req,res);return;}
    if(action==='cancel-preparation'){await createTestCancelPreparationHandler({repository,enabled:true})(req,res);return;}
    if(action!=='checkout'){send(404,{error:'Not found'});return;}
-   const base=createStripeTestCheckoutClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl,returnOrigin:RETURN});
+   const base=createStripeTestCheckoutClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl,accountId:environment.accountId,returnOrigin:environment.previewOrigin});
    async function verifyAccount(){
     const results=await Promise.all(['/v1/account','/v1/balance'].map(async p=>{
      const r=await fetchImpl('https://api.stripe.com'+p,{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000),headers:{Authorization:'Bearer '+env.RACK_RELIC_TEST_STRIPE_KEY,'Stripe-Version':'2026-10-28.endive'}});
-     const age=r.headers.get('age');if(!r.ok||age!==null&&(!/^\d+$/.test(age)||Number(age)>0))throw Error('Stripe identity unavailable');return r.json();
+     const age=r.headers.get('age');if(!r.ok||age!==null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((r.headers.get(k)||'').toUpperCase())))throw Error('Stripe identity unavailable');return r.json();
     }));if(results[0].id!==env.RACK_RELIC_TEST_STRIPE_ACCOUNT||results[1].livemode!==false)throw Error('Unexpected Stripe account');
    }
    const stripe={createCheckout:async input=>{await verifyAccount();return base.createCheckout(input);},retrieveCheckout:async input=>{await verifyAccount();return base.retrieveCheckout(input);}};
-   const tax=createStripeTestTaxClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl});
+   const baseTax=createStripeTestTaxClient({secretKey:env.RACK_RELIC_TEST_STRIPE_KEY,fetchImpl});
+   // A test-key prefix alone does not establish which sandbox receives the
+   // addresses/calculation. Verify the complete provider identity first.
+   const tax={quote:async input=>{await verifyAccount();return baseTax.quote(input);}};
    const shipping=shippingMode==='shippo_test'?createShippoTestClient({token:env.RACK_RELIC_TEST_SHIPPO_KEY,fetchImpl}):{async quote(){return {test:true,rates:[{id:'c'.repeat(32),test:true,currency:'USD',amountCents:500}]};}};
    const quotes=createTestQuoteService({tax,shipping,captureFulfillment:shippingMode==='shippo_test',loadFulfillment:async(id,order)=>{
     if(id!==listing.id||!members.includes(order.seller_id))throw Error('Synthetic listing required');
