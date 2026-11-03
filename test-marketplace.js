@@ -57,6 +57,21 @@
    b.addEventListener('click',()=>operation(async auth=>{const existing=await api(action,{},authorization);if(!current()||auth!==authVersion)return;show(existing);if(!reason||existing.state==='review_required')return;const r=await api(action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})},authorization);if(!current()||auth!==authVersion)return;show(r);}));section.append(b);}
   add('Check saved report');for(const [reason,label] of Object.entries(labels))add(label,reason);card.append(section);
  }
+ function issueThreadPanel(card,o){
+  if(config?.issueResponsesEnabled!==true||!['paid','review'].includes(o.state)||![o.buyer_id,o.seller_id].includes(member))return;
+  const owner=member,authorization=token,version=renderVersion,current=()=>version===renderVersion&&owner===member&&authorization===token;
+  const section=document.createElement('details'),summary=document.createElement('summary'),status=document.createElement('p');summary.textContent='Test order issue updates';status.textContent='Check the saved buyer report and seller response. Suggested actions require review; no return or refund is authorized here.';section.append(summary,status);
+  const labels={investigating:'Seller is checking the issue',propose_return:'Seller proposes a return for review',request_review:'Seller requests operator review'},reasons={not_received:'Item not received',damaged:'Item arrived damaged',not_as_described:'Item significantly not as described'};
+  const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v));let reported=false,responded=false;const buttons=[];
+  function show(r){if(r?.test!==true||r.orderId!==o.id||!['not_reported','review_required'].includes(r.state))throw Error('Issue status needs confirmation');if(r.state==='not_reported'){reported=false;status.textContent='No buyer report is saved for this test order.';return;}
+   if(!Object.hasOwn(reasons,r.reason)||!date(r.reportedAt)||r.acknowledgedAt!==null&&!date(r.acknowledgedAt)||r.sellerResponse!==null&&(!Object.hasOwn(labels,r.sellerResponse?.kind)||!date(r.sellerResponse.submittedAt)))throw Error('Issue status needs confirmation');reported=true;responded=!!r.sellerResponse;status.textContent=reasons[r.reason]+'. '+(r.sellerResponse?labels[r.sellerResponse.kind]+'. ':'Awaiting seller response. ')+(r.acknowledgedAt?'Acknowledged for follow-up. ':'Awaiting operator acknowledgment. ')+'The issue remains open. No refund or fulfillment release.';
+  }
+  const action='issue-thread&orderId='+encodeURIComponent(o.id);
+  function add(label,response){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent=label;const update=disabled=>{b.disabled=disabled||!!response&&(!reported||responded);};buttons.push(update);checkoutWidgets.push(update);update(busy);
+   b.addEventListener('click',()=>operation(async auth=>{if(!current())return;const existing=await api(action,{},authorization);if(!current()||auth!==authVersion)return;show(existing);if(!response||!reported||responded)return;const r=await api(action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response})},authorization);if(!current()||auth!==authVersion)return;show(r);if(!responded||r.sellerResponse.kind!==response)throw Error('Check the saved seller response before trying again.');}));section.append(b);
+  }
+  add('Check order issue updates');if(owner===o.seller_id){add('I am checking this issue','investigating');add('Propose a return for review','propose_return');add('Request operator review','request_review');}card.append(section);
+ }
  function refundPanel(card,o,client){
   const section=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Operator test refund';section.append(summary);
   const explain=document.createElement('p');explain.className='small';explain.textContent='Sandbox only. Refund confirmation comes from Stripe’s signed notice. Fulfillment stays on hold.';section.append(explain);
@@ -189,12 +204,13 @@
   try{
    const result=await api('issue-review',{},authorization);if(!current())return;
    const labels={not_received:'Item not received',damaged:'Item arrived damaged',not_as_described:'Item significantly not as described'},uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+   const responses={investigating:'Seller is checking the issue',propose_return:'Seller proposes a return for review',request_review:'Seller requests operator review'};
    const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v));
-   if(result?.test!==true||typeof result.hasMore!=='boolean'||!Array.isArray(result.issues)||result.issues.length>100||result.issues.some(r=>!uuid.test(r?.orderId||'')||!Object.hasOwn(labels,r.reason)||!date(r.reportedAt)||r.acknowledgedAt!==null&&!date(r.acknowledgedAt)))throw Error('Invalid report queue');
+   if(result?.test!==true||typeof result.hasMore!=='boolean'||!Array.isArray(result.issues)||result.issues.length>100||result.issues.some(r=>!uuid.test(r?.orderId||'')||!Object.hasOwn(labels,r.reason)||!date(r.reportedAt)||r.acknowledgedAt!==null&&!date(r.acknowledgedAt)||r.sellerResponse!=null&&(!Object.hasOwn(responses,r.sellerResponse.kind)||!date(r.sellerResponse.submittedAt))))throw Error('Invalid report queue');
    $('issue-review-rows').replaceChildren();
    if(!result.issues.length){const p=document.createElement('p');p.textContent='No saved reports for your participating test orders.';$('issue-review-rows').append(p);}
    for(const r of result.issues){
-    const card=document.createElement('article');card.className='order';const title=document.createElement('strong'),status=document.createElement('p'),ref=document.createElement('p');title.textContent=labels[r.reason];status.textContent=r.acknowledgedAt?'Acknowledged for follow-up — issue remains open.':'Awaiting operator acknowledgment';ref.textContent='Order '+r.orderId;ref.className='small';card.append(title,status,ref);
+    const card=document.createElement('article');card.className='order';const title=document.createElement('strong'),status=document.createElement('p'),ref=document.createElement('p');title.textContent=labels[r.reason];status.textContent=r.acknowledgedAt?'Acknowledged for follow-up — issue remains open.':'Awaiting operator acknowledgment';ref.textContent='Order '+r.orderId;ref.className='small';card.append(title,status,ref);if(r.sellerResponse){const response=document.createElement('p');response.textContent=responses[r.sellerResponse.kind]+'. The issue remains open.';card.append(response);}
     if(!r.acknowledgedAt){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='Acknowledge for follow-up';checkoutWidgets.push(disabled=>{b.disabled=disabled;});b.disabled=busy;
      b.addEventListener('click',()=>operation(async auth=>{if(!current())return;const ack=await api('issue-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId:r.orderId})},authorization);if(!current()||auth!==authVersion)return;if(ack?.test!==true||ack.orderId!==r.orderId||ack.acknowledged!==true||!date(ack.acknowledgedAt))throw Error('Acknowledgment needs confirmation. Refresh the queue.');await loadIssueReview(version,owner,authorization);if(current())note('Test report acknowledged for follow-up. The issue remains open and fulfillment stays held.');}));card.append(b);
     }$('issue-review-rows').append(card);
@@ -248,7 +264,7 @@
      if(Number.isSafeInteger(o.refund_pending_cents)&&o.refund_pending_cents>0)refund.textContent+=' · Pending '+money(o.refund_pending_cents);
     }card.append(refund);
    }
-   issuePanel(card,o);
+   issuePanel(card,o);issueThreadPanel(card,o);
    if(refunds)refundPanel(card,o,refunds);
    if(refunds&&o.state==='paid'){feePanel(card,o);riskPanel(card,o);trackingPanel(card,o);}
    if(refunds)fulfillmentPanel(card,o);

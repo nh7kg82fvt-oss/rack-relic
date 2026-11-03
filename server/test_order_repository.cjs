@@ -4,6 +4,7 @@ const {verifyStripeTestEvent,stripeTestEventRpc}=require('./marketplace_test_che
 const {validateFulfillment,publicFulfillmentStatus}=require('./test_fulfillment.cjs');
 const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
 const {publicTrackingStatus}=require('./test_tracking_service.cjs');
+const {RESPONSES,publicIssueThread}=require('./test_issue_thread.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
@@ -43,14 +44,15 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   async reviewOrderIssues({authorization}){
    const actor=await refundOperator(authorization),rows=await rpc('rr_test_issue_review',{p_actor:actor});
    const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v));
-   if(!Array.isArray(rows)||rows.length>101||rows.some(r=>r?.participant!==true||!UUID.test(r.order_id||'')||!['not_received','damaged','not_as_described'].includes(r.reason)||!date(r.reported_at)||r.acknowledged_at!==null&&!date(r.acknowledged_at)))throw new OrderServiceUnavailable('Invalid issue queue');
-   return {test:true,hasMore:rows.length>100,issues:rows.slice(0,100).map(r=>({orderId:r.order_id,reason:r.reason,reportedAt:r.reported_at,acknowledgedAt:r.acknowledged_at}))};
+   if(!Array.isArray(rows)||rows.length>101||rows.some(r=>r?.participant!==true||!UUID.test(r.order_id||'')||!['not_received','damaged','not_as_described'].includes(r.reason)||!date(r.reported_at)||r.acknowledged_at!==null&&!date(r.acknowledged_at)||r.seller_response!=null&&(!RESPONSES.includes(r.seller_response)||!date(r.seller_submitted_at))||r.seller_response==null&&r.seller_submitted_at!=null))throw new OrderServiceUnavailable('Invalid issue queue');
+   return {test:true,hasMore:rows.length>100,issues:rows.slice(0,100).map(r=>({orderId:r.order_id,reason:r.reason,reportedAt:r.reported_at,acknowledgedAt:r.acknowledged_at,...(r.seller_response?{sellerResponse:{kind:r.seller_response,submittedAt:r.seller_submitted_at}}:{})}))};
   },
   async acknowledgeOrderIssue({authorization,orderId}){
    id(orderId);const actor=await refundOperator(authorization),r=await rpc('rr_test_acknowledge_issue',{p_actor:actor,p_order:orderId});
    if(r?.test!==true||r.orderId!==orderId||r.acknowledged!==true||typeof r.acknowledgedAt!=='string'||!Number.isFinite(Date.parse(r.acknowledgedAt)))throw new OrderServiceUnavailable('Invalid issue acknowledgment');
    return {test:true,orderId,acknowledged:true,acknowledgedAt:r.acknowledgedAt};
   },
+  async issueThread({authorization,orderId,response}){id(orderId);const actor=await member(authorization);if(response!==undefined&&!RESPONSES.includes(response))throw new OrderAccessDenied('Invalid seller response');return publicIssueThread(await rpc('rr_test_issue_thread',{p_actor:actor,p_order:orderId,p_response:response??null}),orderId);},
   async orderIssue({authorization,orderId,reason}){id(orderId);const actor=await member(authorization);if(reason!==undefined&&!['not_received','damaged','not_as_described'].includes(reason))throw new OrderAccessDenied('Invalid issue category');return rpc('rr_test_order_issue',{p_actor:actor,p_order:orderId,p_reason:reason??null});},
   async sellerContext({authorization}){const actor=await member(authorization);return rpc('rr_test_seller_context',{p_actor:actor});},
   async claimSeller({authorization}){const actor=await member(authorization);return rpc('rr_test_claim_seller',{p_actor:actor});},
