@@ -8,6 +8,7 @@ Disallow: /drafts
 Disallow: /reports
 Disallow: /saved
 Disallow: /sell
+Allow: /seller-guide$
 Disallow: /bundles
 Disallow: /bundle-drafts
 Disallow: /price-suggestions
