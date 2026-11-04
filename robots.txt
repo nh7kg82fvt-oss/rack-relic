@@ -1,0 +1,15 @@
+User-agent: *
+Disallow: /api/
+Disallow: /demo/
+Disallow: /listing/
+Disallow: /account
+Disallow: /messages
+Disallow: /drafts
+Disallow: /reports
+Disallow: /saved
+Disallow: /sell
+Disallow: /bundles
+Disallow: /bundle-drafts
+Disallow: /price-suggestions
+
+Sitemap: https://www.rackrelic.com/sitemap.xml
