@@ -14,3 +14,4 @@ Disallow: /bundle-drafts
 Disallow: /price-suggestions
 
 Sitemap: https://www.rackrelic.com/sitemap.xml
+Sitemap: https://www.rackrelic.com/sitemap.txt
