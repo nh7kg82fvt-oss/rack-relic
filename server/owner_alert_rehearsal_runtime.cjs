@@ -59,7 +59,15 @@ function createOwnerAlertRehearsalRuntime({env=process.env,fetchImpl=globalThis.
   let parsed;try{parsed=new URL(req.url,E.previewOrigin);}catch{send(404,{error:'Not found'});return;}
   const configRequest=req.method==='GET'&&parsed.search==='?action=config';
   const callbackRequest=req.method==='GET'&&parsed.searchParams.size===1&&parsed.searchParams.has('code')&&parsed.searchParams.get('code').length<=2048;
-  if(parsed.origin!==E.previewOrigin||parsed.pathname!=='/api/test-owner-alert'||parsed.hash||parsed.search&&!configRequest&&!callbackRequest){send(404,{error:'Not found'});return;}
+  // Authentication failures return to the same page too. They grant no session
+  // or send authority; render fixed recovery copy instead of a misleading 404.
+  const errorKeys=['error','error_code','error_description'];
+  const errorCallback=req.method==='GET'&&parsed.searchParams.has('error')&&
+   [...parsed.searchParams.keys()].every(k=>errorKeys.includes(k)&&parsed.searchParams.getAll(k).length===1)&&
+   /^[a-z_]{1,64}$/.test(parsed.searchParams.get('error'))&&
+   (!parsed.searchParams.has('error_code')||/^[a-z_]{1,64}$/.test(parsed.searchParams.get('error_code')))&&
+   (parsed.searchParams.get('error_description')||'').length<=512;
+  if(parsed.origin!==E.previewOrigin||parsed.pathname!=='/api/test-owner-alert'||parsed.hash||parsed.search&&!configRequest&&!callbackRequest&&!errorCallback){send(404,{error:'Not found'});return;}
   if(req.method==='GET'){
    if(configRequest){
     const publishableKey=env.RACK_RELIC_TEST_SUPABASE_PUBLISHABLE_KEY;

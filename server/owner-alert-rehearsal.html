@@ -18,10 +18,11 @@
 /* OWNER_SIGNIN_MODULE */
 'use strict';(()=>{const form=document.getElementById('review'),send=document.getElementById('send'),check=document.getElementById('reconcile'),status=document.getElementById('status');let busy=false,attempted=false;
 const signButton=document.getElementById('signin');let signin;
-const callback=new URLSearchParams(location.search).get('code');if(location.search||location.hash)history.replaceState(null,'','/api/test-owner-alert');
+const loginParams=new URLSearchParams(location.search),callback=loginParams.get('code'),loginError=loginParams.has('error'),loginErrorCode=loginParams.get('error_code');if(location.search||location.hash)history.replaceState(null,'','/api/test-owner-alert');
 async function init(){try{const r=await fetch('/api/test-owner-alert?action=config',{redirect:'error',cache:'no-store'});if(!r.ok)throw Error('Owner sign-in configuration is unavailable.');const config=await r.json();
 signin=RackOwnerAlertSignin.createOwnerAlertSignin({publishableKey:config.publishableKey,storage:localStorage,fetchImpl:fetch,cryptoImpl:crypto,origin:location.origin});
 if(callback){const session=await signin.complete(callback);sessionStorage.setItem('rr-private-test-session:acceptance-v1',JSON.stringify(session));status.textContent='Owner signed in. No alert email sent. Review the current setup before the one test.';}
+else if(loginError){status.textContent=loginErrorCode==='otp_expired'?'This sign-in link has expired or was already used. Request a fresh owner sign-in link and open only the newest email in this Chrome profile. No alert sent.':'Owner sign-in did not finish. Request a fresh owner sign-in link. No alert sent.';}
 signButton.disabled=false;}catch(e){status.textContent=e.message;}}
 signButton.addEventListener('click',async()=>{if(!signin)return;signButton.disabled=true;try{await signin.send();status.textContent='Owner link requested. Open the newest link in this same Chrome profile, then review setup. No alert sent.';}catch(e){status.textContent=e.message;}finally{signButton.disabled=false;}});void init();
 async function act(action){if(busy||action==='send-one'&&attempted||!form.reportValidity())return;busy=true;send.disabled=true;check.disabled=true;
