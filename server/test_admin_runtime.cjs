@@ -19,7 +19,7 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
   const workEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_WORK_ENABLED==='true';
   const reserveReadEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_RESERVE_READ_ENABLED==='true';
   if(action==='work'&&!workEnabled){send(404,{error:'Not found'});return;}
-  if(action===null){res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.end(fs.readFileSync(path.join(__dirname,'test-admin.html'),'utf8'));return;}
+  if(action===null){res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.end(fs.readFileSync(path.join(__dirname,'test-admin.html'),'utf8'));return;}
   if(action==='config'){send(200,{test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,workEnabled,reserveReadEnabled,reserveReadVersion:reserveRead.VERSION});return;}
   const members=(env.RACK_RELIC_TEST_MEMBER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean),operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
   const ownerId=env.RACK_RELIC_TEST_ADMIN_OWNER_ID;

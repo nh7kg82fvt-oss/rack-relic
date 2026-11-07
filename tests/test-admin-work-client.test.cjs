@@ -8,12 +8,12 @@ const item=(patch={})=>({id:ITEM,service:'stripe',title:'Check setup',note:'Priv
 const list=(items=[],patch={})=>({test:true,live:false,releaseEnabled:false,observedAt:new Date(NOW).toISOString(),items,hasMore:false,nextCursor:patch.hasMore?'cursor_next':null,...patch});
 const receipt=(body,patch={})=>({test:true,live:false,releaseEnabled:false,requestId:body.requestId,replayed:false,item:item({id:body.itemId,version:body.version+1,service:body.service,title:body.title,note:body.note,status:body.status}),...patch});
 const marker=(patch={})=>({version:1,environmentId:ENV,member:OWNER,requestId:REQUEST,itemId:ITEM,...patch});
-function setup({saved=new Map(),onFetch,crypto=true,storageFailure=false}={}){
+function setup({saved=new Map(),onFetch,crypto=true,storageFailure=false,relatedTargets=new Set()}={}){
  let current={token:'owner-session-token',member:OWNER},now=NOW,accessLost=0,next=0;
  const elements=[],calls=[],roots=[];
  const createElement=tag=>{const n={tag,children:[],textContent:'',value:'',style:{},hidden:false,disabled:false,events:{},append(...xs){this.children.push(...xs);},replaceChildren(...xs){this.children=[...xs];},setAttribute(k,v){this[k]=v;},addEventListener(k,fn){this.events[k]=fn;},fire(k='click'){return this.events[k]?.({preventDefault(){}});}};elements.push(n);return n;};
  const root=createElement('section');roots.push(root);
- const document={createElement};
+ const document={createElement,getElementById:id=>relatedTargets.has(id)?{}:null};
  const storage={getItem:k=>{if(storageFailure)throw Error('Storage unavailable');return saved.get(k)??null;},setItem:(k,v)=>{if(storageFailure)throw Error('Storage unavailable');saved.set(k,v);},removeItem:k=>{if(storageFailure)throw Error('Storage unavailable');saved.delete(k);}};
  const window={crypto:crypto?{randomUUID:()=>++next===1?REQUEST:ITEM}:undefined};
  const fetchImpl=async(url,options)=>{calls.push({url,options,stored:[...saved.entries()]});assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.headers.Authorization,'Bearer owner-session-token');assert.ok(url.startsWith('/api/test-admin?action=work'));return onFetch?onFetch(url,options,calls.length):Response.json(list());};
@@ -125,4 +125,31 @@ test('single-line titles reject newlines and tabs before a save is sent',async()
 });
 test('a record at the supported version ceiling cannot begin an unrepresentable update',async()=>{
  const x=setup({onFetch:async()=>Response.json(list([item({version:1000000000})]))});await x.client.refresh();x.button('Edit this follow-up').fire();x.fill();x.submit();await tick();assert.equal(x.postCalls().length,0);assert.equal(x.saved.size,0);assert.match(x.text(),/supported edit limit/);x.client.destroy();
+});
+
+test('related record shortcut drafts only after a fresh owner list and sends no save automatically',async()=>{
+ const x=setup(),ref={kind:'case',ref:'case_'+'a'.repeat(32),orderRef:OTHER};
+ assert.equal(x.client.startFromRecord(ref),false);assert.equal(x.calls.length,0);
+ await x.client.refresh();assert.equal(x.client.startFromRecord(ref),true);
+ assert.equal(x.title().value,'Review payment case');assert.match(x.note().value,new RegExp(ref.ref));assert.match(x.note().value,new RegExp(OTHER));assert.equal(x.selects()[0].value,'stripe');
+ assert.equal(x.postCalls().length,0);assert.equal(x.saved.size,0);assert.match(x.text(),/Nothing has been saved yet/);x.client.destroy();
+});
+test('record shortcuts never replace an unsaved draft, pending save or expired owner context',async()=>{
+ const x=setup();await x.client.refresh();x.fill({title:'Keep this draft',note:'My unsaved note'});
+ assert.equal(x.client.startFromRecord({kind:'order',ref:OTHER}),false);assert.equal(x.title().value,'Keep this draft');assert.equal(x.note().value,'My unsaved note');assert.equal(x.postCalls().length,0);
+ x.setSession({token:'different-owner-session',member:OWNER});assert.equal(x.client.startFromRecord({kind:'order',ref:OTHER}),false);assert.equal(x.root.children.length,0);
+ const y=setup({saved:new Map([[KEY,JSON.stringify(marker())]])});assert.equal(y.client.startFromRecord({kind:'order',ref:OTHER}),false);assert.equal(y.postCalls().length,0);y.client.destroy();
+});
+test('related draft accepts only an opaque order or case binding, with no URL/body/authority injection',async()=>{
+ const x=setup();await x.client.refresh();
+ for(const value of [null,{kind:'order',ref:'https://foreign.invalid'},{kind:'order',ref:OTHER,verified:true},{kind:'case',ref:'case_bad',orderRef:OTHER},{kind:'case',ref:'case_'+'a'.repeat(32),orderRef:'foreign'}])assert.equal(x.client.startFromRecord(value),false);
+ assert.equal(x.title().value,'');assert.equal(x.note().value,'');assert.equal(x.postCalls().length,0);
+ assert.equal(x.client.startFromRecord({kind:'order',ref:OTHER}),true);assert.equal(x.title().value,'Review order');assert.match(x.note().value,new RegExp(OTHER));x.client.destroy();
+});
+
+test('saved follow-up links only well-formed references to currently visible owner records',async()=>{
+ const c='case_'+'a'.repeat(32),targets=new Set(['case-'+c,'order-'+OTHER]);
+ const x=setup({relatedTargets:targets,onFetch:async()=>Response.json(list([item({note:'Case reference: '+c+'\nOrder reference: '+OTHER+'\nOrder reference: https://foreign.invalid\nCase reference: '+c})]))});await x.client.refresh();
+ assert.deepEqual(x.byTag('a').map(n=>n.href),['#case-'+c,'#order-'+OTHER]);assert.equal(x.postCalls().length,0);
+ targets.clear();await x.client.refresh();assert.equal(x.byTag('a').length,0);assert.match(x.text(),new RegExp(c));x.client.destroy();
 });

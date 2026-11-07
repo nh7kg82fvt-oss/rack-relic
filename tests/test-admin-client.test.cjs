@@ -71,7 +71,7 @@ test('owner attention follows the refreshed deadline and clears its private case
 
 test('control center explains next steps and saved payment states without suggesting release authority',async()=>{
  const x=setup();await tick();const view=textOf(x.get('overview'));
- assert.equal(x.get('page-title').textContent,'Rack Relic control center');
+ assert.equal(x.get('page-title').textContent,'Rack Command');
  assert.match(view,/view-only/);assert.match(view,/cannot approve payments, issue refunds or pay sellers/);
  assert.match(view,/Practice payment recorded/);assert.match(view,/Payment review needed/);assert.match(view,/No refund recorded/);assert.match(view,/Seller money stays on hold/);
  assert.ok(x.get('attention').children.every(item=>/Next step:/.test(textOf(item))));
@@ -91,4 +91,19 @@ test('task tools stay unavailable unless their explicit boolean flag is enabled'
  let mounts=0;const workModule={mount(){mounts++;throw Error('must not mount');}};
  const x=setup({workModule});await tick();assert.equal(mounts,0);assert.match(textOf(x.get('work-tools')),/not connected/);x.client.destroy();
  const invalid=setup({configPatch:{workEnabled:'true'},workModule});await tick();assert.equal(invalid.storageReads(),0);assert.equal(invalid.get('overview').hidden,true);assert.equal(mounts,0);invalid.client.destroy();
+});
+
+test('attention opens its visible case, case opens its matching order, and drafts stay behind the owner work gate',async()=>{
+ const received=[],caseRef='case_'+'a'.repeat(32),workModule={mount(){return {refresh(){},destroy(){},startFromRecord(record){received.push(record);return true;}};}};
+ const x=setup({configPatch:{workEnabled:true},workModule,onOverview:async(n,valid)=>{const v=valid();v.cases=[{caseRef,orderRef:O,kind:'dispute',status:'needs_response',requiresResponse:true,dueBy:null,observedAt:v.observedAt,holdRequired:true}];v.counts.openCases=1;return Response.json(v);}});await tick();
+ const alert=x.get('attention').children.find(n=>n.children.some(c=>c.tag==='a'&&c.href==='#case-'+caseRef));assert.ok(alert);
+ const row=x.get('case-'+caseRef),cell=row.children[0];assert.ok(cell.children.some(n=>n.tag==='a'&&n.href==='#order-'+O));
+ const draft=cell.children.find(n=>n.tag==='button'&&n.textContent==='Draft follow-up');assert.ok(draft);draft.fire();assert.deepEqual(received,[{kind:'case',ref:caseRef,orderRef:O}]);
+ x.get('logout').fire();draft.fire();assert.equal(received.length,1);assert.equal(x.get('overview').children.length,0);assert.equal(x.get('signin-link').hidden,false);assert.ok(x.calls.every(c=>c.options.method==='GET'));x.client.destroy();
+ const closed=setup({workModule});await tick();assert.equal(closed.all().some(n=>n.tag==='button'&&n.textContent==='Draft follow-up'),false);closed.client.destroy();
+});
+test('provider shortcuts are fixed Rack resources and do not mark unknown coverage connected',async()=>{
+ const x=setup();await tick();const links=x.get('sources').children.flatMap(c=>c.children.filter(n=>n.tag==='a'));
+ assert.deepEqual(links.map(n=>n.href).sort(),['https://dash.cloudflare.com/7a3ed4f82692abebebc6447e5f5e217c/r2/default/buckets/rack-relic-private-photo-archive','https://supabase.com/dashboard/project/tzymapahsfiyhgilsmxl'].sort());
+ assert.ok(links.every(n=>n.target==='_blank'&&n.rel==='noopener noreferrer'));assert.match(textOf(x.get('sources')),/Not verified yet/);assert.ok(x.calls.every(c=>c.url.startsWith('/api/test-admin?')));x.client.destroy();
 });

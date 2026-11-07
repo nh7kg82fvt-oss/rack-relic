@@ -78,9 +78,12 @@
    if(cached(response))throw Error('Cached follow-up response');
    return response;
   }
+  function relatedLinks(value){
+   const links=[],seen=new Set();for(const line of value.split('\n')){if(links.length>=2)break;const m=/^(Case|Order) reference: (.+)$/.exec(line);if(!m)continue;const isCase=m[1]==='Case';if(isCase?!/^case_[a-f0-9]{32}$/.test(m[2]):!UUID.test(m[2]))continue;const target=(isCase?'case-':'order-')+m[2];if(seen.has(target)||!document.getElementById?.(target))continue;seen.add(target);const link=el('a','Open related '+(isCase?'case':'order'));link.href='#'+target;links.push(link);}return links;
+  }
   function renderList(data){
    items=data.items;list.replaceChildren();editButtons.length=0;
-   for(const item of items){const card=el('article');card.className='card';card.append(el('h3',item.title),el('p',SERVICES[item.service]+' · '+STATUSES[item.status]));if(item.note){const paragraph=el('p',item.note);paragraph.style&&(paragraph.style.whiteSpace='pre-wrap');card.append(paragraph);}card.append(el('p','Last saved: '+new Date(item.updatedAt).toLocaleString('en-US',{timeZone:'America/Los_Angeles',timeZoneName:'short'})));const edit=el('button','Edit this follow-up');edit.type='button';edit.addEventListener('click',()=>{if(destroyed||busy||marker||markerInvalid||!loaded||requireReload)return;editing=item;versionConflict=false;service.value=item.service;title.value=item.title;note.value=item.note;status.value=item.status;editingHint.textContent='Editing saved follow-up: '+item.title;setNotice('Editing the latest saved follow-up. Changes stay in this form until you save.');updateControls();});editButtons.push(edit);card.append(edit);list.append(card);}
+   for(const item of items){const card=el('article');card.className='card';card.append(el('h3',item.title),el('p',SERVICES[item.service]+' · '+STATUSES[item.status]));if(item.note){const paragraph=el('p',item.note);paragraph.style&&(paragraph.style.whiteSpace='pre-wrap');card.append(paragraph);for(const link of relatedLinks(item.note))card.append(link);}card.append(el('p','Last saved: '+new Date(item.updatedAt).toLocaleString('en-US',{timeZone:'America/Los_Angeles',timeZoneName:'short'})));const edit=el('button','Edit this follow-up');edit.type='button';edit.addEventListener('click',()=>{if(destroyed||busy||marker||markerInvalid||!loaded||requireReload)return;editing=item;versionConflict=false;service.value=item.service;title.value=item.title;note.value=item.note;status.value=item.status;editingHint.textContent='Editing saved follow-up: '+item.title;setNotice('Editing the latest saved follow-up. Changes stay in this form until you save.');updateControls();});editButtons.push(edit);card.append(edit);list.append(card);}
    if(!items.length)list.append(el('p','No follow-up work has been saved yet.'));
    nextCursor=data.nextCursor;coverage.textContent=(data.hasMore?'More follow-ups are available on the next page. This is not the complete list.':pageCursor===null?'These are your saved practice follow-ups.':'This is the last page in this view.')+' New or changed work can move between pages; return to the first page to check the newest records.'+(visitedPages.size>=100?' This view reached its page limit. Return to the first page to start a new check.':'');
   }
@@ -121,12 +124,22 @@
    const next={version:1,environmentId,member:owner.member,requestId,itemId};if(!persistMarker(next)){markerInvalid=true;setNotice('This browser cannot keep the save reference safely. No save was sent. Ask for help before trying again.');updateControls();return;}
    marker=next;payload=Object.freeze({operation:editing?'update':'create',requestId,itemId,version:editing?editing.version:0,...draft});updateControls();void sendPayload();
   }
+  function startFromRecord(value){
+   if(destroyed||!sameSession()){if(!destroyed)destroy();return false;}
+   if(busy||!loaded||marker||markerInvalid||requireReload||versionConflict)return false;
+   const isOrder=exact(value,['kind','ref'])&&value.kind==='order'&&UUID.test(value.ref||''),isCase=exact(value,['kind','ref','orderRef'])&&value.kind==='case'&&/^case_[a-f0-9]{32}$/.test(value.ref||'')&&UUID.test(value.orderRef||'');
+   if(!isOrder&&!isCase)return false;
+   if(editing||title.value||note.value){setNotice('Your current unsaved follow-up is preserved. Save it or choose Start a new follow-up before drafting work from another record.');return false;}
+   service.value='stripe';status.value='open';title.value=isCase?'Review payment case':'Review order';
+   note.value=(isCase?'Case reference: '+value.ref+'\nOrder reference: '+value.orderRef:'Order reference: '+value.ref)+'\nNext step: Check the saved record and record the next action.';
+   editingHint.textContent='Draft from a saved '+(isCase?'case':'order')+'.';setNotice('Related reference added to this draft. Review it, then choose Save follow-up. Nothing has been saved yet.');updateControls();title.focus?.();return true;
+  }
   function destroy(){if(destroyed)return;destroyed=true;generation++;active?.abort();active=null;busy=false;loaded=false;items=[];editing=null;payload=null;resetPages();for(const n of [title,note])n.value='';root.replaceChildren();}
   form.addEventListener('submit',submit);check.addEventListener('click',()=>void reconcile());retry.addEventListener('click',()=>void sendPayload());newItem.addEventListener('click',()=>{if(destroyed||busy||marker||markerInvalid||!loaded||requireReload)return;editing=null;versionConflict=false;service.value='website';title.value='';note.value='';status.value='open';editingHint.textContent='Adding a new follow-up.';setNotice('New follow-up. Nothing is saved until you choose Save follow-up.');updateControls();});
   nextPage.addEventListener('click',()=>{if(destroyed||busy||marker||markerInvalid||!loaded||requireReload||nextCursor===null||visitedPages.has(nextCursor)||visitedPages.size>=100)return;pageCursor=nextCursor;nextCursor=null;loaded=false;void refresh();});
   firstPage.addEventListener('click',()=>{if(destroyed||busy||marker||markerInvalid||pageCursor===null)return;resetPages();loaded=false;void refresh();});
   readMarker();if(!window.crypto||typeof window.crypto.randomUUID!=='function'){markerInvalid=true;setNotice('This browser cannot create safe save references. Follow-up changes are unavailable.');}updateControls();
-  return Object.freeze({refresh,destroy});
+  return Object.freeze({refresh,destroy,startFromRecord});
  }
  return Object.freeze({mount,validateWork,validateReceipt});
 });
