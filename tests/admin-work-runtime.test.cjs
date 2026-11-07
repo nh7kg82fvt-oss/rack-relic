@@ -9,9 +9,10 @@ const item={id:I,service:C.service,title:C.title,note:C.note,status:C.status,ver
 const saved={test:true,live:false,releaseEnabled:false,requestId:R,replayed:false,item};
 const work={test:true,live:false,releaseEnabled:false,observedAt:TIME,items:[item],hasMore:false,nextAfter:null};
 const env=()=>({VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:A.branch,RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED:'true',RACK_RELIC_TEST_ADMIN_WORK_ENABLED:'true',RACK_RELIC_TEST_ADMIN_OWNER_ID:OP,RACK_RELIC_TEST_SUPABASE_URL:A.projectUrl,RACK_RELIC_TEST_STRIPE_ACCOUNT:A.accountId,RACK_RELIC_TEST_SUPABASE_SERVER_KEY:'sb_secret_fixture',RACK_RELIC_TEST_MEMBER_IDS:OP+','+BUY,RACK_RELIC_TEST_REFUND_OPERATOR_IDS:OP,RACK_RELIC_TEST_REFUNDS_ENABLED:'true',RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED:'true'});
-async function call({method='POST',url='/api/test-admin?action=work',body=JSON.stringify(C),actor=OP,patch={},headers={},rpcResponse,rpcStatus=200,authorization='Bearer owner-fixture'}={}){
+async function call({method='POST',url='/api/test-admin?action=work',body=JSON.stringify(C),parsedBody,actor=OP,patch={},headers={},rpcResponse,rpcStatus=200,authorization='Bearer owner-fixture'}={}){
  const calls=[];let auths=0;const h=createTestAdminRuntime({env:{...env(),...patch},clock:()=>NOW,fetchImpl:async(u,o)=>{calls.push({u,o});assert.equal(new URL(u).origin,A.projectUrl);if(u.endsWith('/auth/v1/user'))return Response.json({id:Array.isArray(actor)?actor[Math.min(auths++,actor.length-1)]:actor});const name=u.split('/').pop();assert.ok(['rr_test_admin_work_list','rr_test_admin_work_receipt','rr_test_write_admin_work'].includes(name));const b=JSON.parse(o.body);assert.equal(b.p_owner,OP);assert.equal(b.p_actor,OP);return Response.json(rpcResponse||(name==='rr_test_admin_work_list'?work:name==='rr_test_admin_work_receipt'?{...saved,replayed:true}:saved),{status:rpcStatus});}});
  const req=Readable.from(body===null?[]:[body]);req.method=method;req.url=url;req.headers={authorization,origin:A.previewOrigin,'content-type':'application/json',...headers};
+ if(parsedBody!==undefined)Object.defineProperty(req,'body',{get(){return parsedBody;}});
  const res={headers:{},setHeader(k,v){this.headers[k]=v;},end(value){this.body=value;this.data=JSON.parse(value);}};await h(req,res);return {calls,res};
 }
 test('internal work is off by default; non-work writes and foreign or malformed forms fail before data access',async()=>{
@@ -23,6 +24,21 @@ test('internal work is off by default; non-work writes and foreign or malformed 
  for(const body of ['{',JSON.stringify({...C,releaseEnabled:true}),JSON.stringify({...C,ownerId:BUY}),JSON.stringify({...C,status:'released'}),JSON.stringify({...C,version:null})]){const x=await call({body});assert.equal(x.res.statusCode,400);assert.equal(x.calls.length,0);}
  const big=await call({body:'x'.repeat(16385)});assert.equal(big.res.statusCode,413);assert.equal(big.calls.length,0);
  for(const url of ['/api/test-admin?action=work&action=work','/api/test-admin?action=work&requestId='+R,'/api/test-admin?action=work&ownerId='+OP]){const x=await call({url});assert.equal(x.res.statusCode,400);assert.equal(x.calls.length,0);}
+});
+test('Vercel parsed JSON and raw bodies produce the same owner-bound save and receipt',async()=>{
+ const raw=await call(),parsed=await call({body:null,parsedBody:{...C}});
+ assert.equal(parsed.res.statusCode,200);assert.deepEqual(parsed.res.data,raw.res.data);assert.deepEqual(parsed.calls.map(c=>[c.u,c.o.method,c.o.body]),raw.calls.map(c=>[c.u,c.o.method,c.o.body]));
+ assert.equal(parsed.calls.filter(c=>c.u.endsWith('/auth/v1/user')).length,2);
+ for(const actor of [BUY,[OP,BUY]])assert.equal((await call({body:null,parsedBody:{...C},actor})).res.statusCode,403);
+});
+test('parsed command handling preserves size, field and same-origin limits without object coercion',async()=>{
+ let touched=0;const getter={...C};Object.defineProperty(getter,'title',{enumerable:true,get(){touched++;return C.title;}});
+ const toJSON={...C,toJSON(){touched++;return C;}},coercible={...C,requestId:{toString(){touched++;return R;}}};
+ for(const body of [null,[],new String(JSON.stringify(C)),getter,toJSON,coercible,{...C,note:'x'.repeat(2001)},{...C,releaseEnabled:true},{...C,ownerId:BUY},{...C,version:NaN},{...C,version:Infinity}])await assert.rejects(readBody({body}),AdminWorkInvalid);
+ assert.equal(touched,0);let reads=0;assert.deepEqual(await readBody(Object.defineProperty({},'body',{get(){reads++;return {...C};}})),C);assert.equal(reads,1);
+ await assert.rejects(readBody(Object.defineProperty({},'body',{get(){throw Error('private parse detail');}})),AdminWorkInvalid);
+ const cross=await call({body:null,parsedBody:{...C},headers:{origin:'https://foreign.invalid'}});assert.equal(cross.res.statusCode,403);assert.equal(cross.calls.length,0);
+ const tooBig=await call({body:null,parsedBody:{...C},headers:{'content-length':'16385'}});assert.equal(tooBig.res.statusCode,413);assert.equal(tooBig.calls.length,0);
 });
 test('only the exact owner can save work and owner authority is freshly rechecked before returning it',async()=>{
  for(const actor of [BUY,'55555555-5555-4555-8555-555555555555']){const x=await call({actor,patch:{RACK_RELIC_TEST_REFUND_OPERATOR_IDS:OP+','+BUY}});assert.equal(x.res.statusCode,403);assert.equal(x.calls.length,1);}

@@ -36,7 +36,17 @@ function receipt(value,{requestId,expected,now=Date.now()}={}){
 async function readBody(req){
  const limit=16384;
  const parse=raw=>{try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));}catch{throw new AdminWorkInvalid('JSON required');}};
- if(req.body!==undefined){if(typeof req.body!=='string'&&!Buffer.isBuffer(req.body))throw new AdminWorkInvalid('Raw JSON body required');const raw=Buffer.isBuffer(req.body)?req.body:Buffer.from(req.body);if(raw.length>limit){const e=new AdminWorkInvalid('Request too large');e.status=413;throw e;}return parse(raw);}
+ let body;try{body=req.body;}catch{throw new AdminWorkInvalid('JSON required');}
+ if(body!==undefined){
+  if(typeof body==='string'||Buffer.isBuffer(body)){const raw=Buffer.isBuffer(body)?body:Buffer.from(body);if(raw.length>limit){const e=new AdminWorkInvalid('Request too large');e.status=413;throw e;}return parse(raw);}
+  // Vercel's Node helper lazily parses application/json. Accept that documented
+  // representation only as bounded, plain command data, never as raw webhook
+  // evidence. No getter, coercible object or toJSON method is invoked here.
+  if(!body||![Object.prototype,null].includes(Object.getPrototypeOf(body)))throw new AdminWorkInvalid('JSON required');
+  const keys=Reflect.ownKeys(body);if(keys.length!==8||keys.some(k=>typeof k!=='string'))throw new AdminWorkInvalid('Invalid private work request');
+  const copy={};for(const k of keys){const d=Object.getOwnPropertyDescriptor(body,k);if(!d||!Object.hasOwn(d,'value')||d.value!==null&&!['string','number','boolean'].includes(typeof d.value))throw new AdminWorkInvalid('Invalid private work request');Object.defineProperty(copy,k,{value:d.value,enumerable:true});}
+  const checked=command(copy);if(Buffer.byteLength(JSON.stringify(checked))>limit){const e=new AdminWorkInvalid('Request too large');e.status=413;throw e;}return checked;
+ }
  if(typeof req[Symbol.asyncIterator]!=='function')throw new AdminWorkInvalid('JSON required');
  let timer;try{return await Promise.race([(async()=>{let size=0;const chunks=[];for await(const chunk of req){const b=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=b.length;if(size>limit){const e=new AdminWorkInvalid('Request too large');e.status=413;throw e;}chunks.push(b);}return parse(Buffer.concat(chunks));})(),new Promise((_,reject)=>{timer=setTimeout(()=>{req.destroy?.();const e=new AdminWorkInvalid('Request timed out');e.status=408;reject(e);},5000);timer.unref?.();})]);}finally{clearTimeout(timer);}
 }
