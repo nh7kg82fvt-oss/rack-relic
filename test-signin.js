@@ -14,7 +14,12 @@
    let r;try{r=await fetchImpl(PROJECT+'/auth/v1/'+path,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{apikey:publishableKey,'Content-Type':'application/json'},body:JSON.stringify(body)});}catch{throw Error('Sign-in did not respond. Please try again shortly.');}
    let data;try{data=await r.json();}catch{throw Error('Sign-in is temporarily unavailable.');}
    if(!r.ok){
-    if(r.status===429)throw Error('Please wait a minute before requesting another sign-in link.');
+    if(r.status===429){
+     const code=data.code||data.error_code;
+     if(code==='over_email_send_rate_limit')throw Error('Rack sign-in email has reached its delivery limit. A new email was not sent. Repeated requests will not fix this; the Rack email sender needs checking.');
+     const value=r.headers?.get('retry-after'),seconds=/^[1-9][0-9]{0,5}$/.test(value||'')?Number(value):null;
+     throw Error(seconds?'Sign-in requests are limited. Wait '+Math.ceil(seconds/60)+' minute(s) before trying once more.':'Sign-in requests are limited. A new email was not confirmed. Please wait before trying again.');
+    }
     if(data.code==='email_address_not_authorized'||data.error_code==='email_address_not_authorized')throw Error('Staging email delivery is restricted. The test email service needs to be configured.');
     throw Error('Sign-in could not be completed. Request a fresh link and open it in the same Chrome profile.');
    }

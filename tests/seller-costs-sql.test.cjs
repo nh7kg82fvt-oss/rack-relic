@@ -134,7 +134,7 @@ test('real repository, seller service, database and public projection preserve c
   fetchImpl:async(url,options)=>{
    const u=new URL(url);assert.equal(u.origin,'https://zvtaqzcqfdjpuwnlpzln.supabase.co');transport.push({path:u.pathname,authorization:options.headers.Authorization});
    if(u.pathname==='/auth/v1/user')return ['Bearer seller','Bearer buyer'].includes(options.headers.Authorization)?Response.json({id:options.headers.Authorization==='Bearer seller'?S:B}):Response.json({error:'Unauthorized'},{status:401});
-   const name=u.pathname.replace('/rest/v1/rpc/',''),keys=functions[name];assert.ok(keys,'No Stripe, Shippo, or other provider is called');assert.equal(options.headers.Authorization,'Bearer sb_secret_sqlFixture');
+   const name=u.pathname.replace('/rest/v1/rpc/',''),keys=functions[name];assert.ok(keys,'No Stripe, Shippo, or other provider is called');assert.equal(options.headers.Authorization,undefined);assert.equal(options.headers.apikey,'sb_secret_sqlFixture');
    const body=JSON.parse(options.body);assert.deepEqual(Object.keys(body).sort(),[...keys].sort());
    try{return Response.json(await rpc(name,keys.map(k=>body[k])));}catch{return Response.json({error:'Rejected SQL fixture request'},{status:400});}
   }});
@@ -159,7 +159,7 @@ test('historical paid order crosses SQL, authenticated repository, seller servic
   fetchImpl:async(url,options)=>{
    const u=new URL(url);assert.equal(u.origin,'https://zvtaqzcqfdjpuwnlpzln.supabase.co');transport.push(u.pathname);
    if(u.pathname==='/auth/v1/user')return options.headers.Authorization==='Bearer seller'?Response.json({id:S}):Response.json({id:B});
-   const name=u.pathname.replace('/rest/v1/rpc/',''),keys=functions[name];assert.ok(keys,'No provider calls');assert.equal(options.headers.Authorization,'Bearer sb_secret_legacyFixture');const body=JSON.parse(options.body);assert.deepEqual(Object.keys(body).sort(),[...keys].sort());
+   const name=u.pathname.replace('/rest/v1/rpc/',''),keys=functions[name];assert.ok(keys,'No provider calls');assert.equal(options.headers.Authorization,undefined);assert.equal(options.headers.apikey,'sb_secret_legacyFixture');const body=JSON.parse(options.body);assert.deepEqual(Object.keys(body).sort(),[...keys].sort());
    try{return Response.json(await rpc(name,keys.map(k=>body[k])));}catch{return Response.json({error:'Rejected historical request'},{status:400});}
   }});
  const costs=createTestSellerCostService({repository,loadCostQuote:async()=>assert.fail('Historical order cannot request a new cost quote')});

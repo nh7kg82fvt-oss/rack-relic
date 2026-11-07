@@ -8,10 +8,13 @@ const {RESPONSES,publicIssueThread}=require('./test_issue_thread.cjs');
 const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
 const {publicProtectionReview}=require('../test-protection-review.js');
 const {getTestEnvironmentByProject}=require('./test_environment_registry.cjs');
+const adminWork=require('./admin_work_data.cjs');
+const reserveRead=require('../test-reserve-read.js');
+class ReserveReadMissing extends Error{}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false,sellerCostsEnabled=false,settlementSimulationEnabled=false}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false,sellerCostsEnabled=false,settlementSimulationEnabled=false,adminWorkEnabled=false,reserveReadEnabled=false,clock=Date.now}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const environment=getTestEnvironmentByProject(projectUrl);
  if(!environment||url.origin!==environment.projectUrl||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -23,9 +26,21 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  if(typeof fetchImpl!=='function')throw Error('Test transport required');
  const origin=url.origin;
  async function request(path,body,authorization){
-  let response;try{response=await fetchImpl(origin+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,Authorization:authorization||'Bearer '+serviceKey,'Content-Type':'application/json','Cache-Control':'no-store'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw new OrderServiceUnavailable('Test order service unavailable');}
+  let response;try{response=await fetchImpl(origin+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,...(authorization?{Authorization:authorization}:/^sb_secret_/.test(serviceKey)?{}:{Authorization:'Bearer '+serviceKey}),'Content-Type':'application/json','Cache-Control':'no-store'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw new OrderServiceUnavailable('Test order service unavailable');}
   const age=response.headers?.get('age');if((age!==null&&age!==undefined&&(!/^\d+$/.test(age)||Number(age)>0))||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw new OrderServiceUnavailable('Cached order authority rejected');
-  if(!response.ok){if(authorization&&[401,403].includes(response.status))throw new OrderAccessDenied('Sign in required');throw new OrderServiceUnavailable('Test order operation rejected');}
+  if(!response.ok){
+   if(authorization&&[401,403].includes(response.status))throw new OrderAccessDenied('Sign in required');
+   if(path==='/rest/v1/rpc/rr_test_admin_reserve_overview'&&[400,404].includes(response.status)){
+    let e;try{e=await response.json();}catch{}
+    if(['PGRST202','42883','42P01','42703'].includes(e?.code))throw new ReserveReadMissing('Reserve read schema missing');
+   }
+   if(path==='/rest/v1/rpc/rr_test_write_admin_work'&&[400,409].includes(response.status)){
+    let e;try{e=await response.json();}catch{}
+    const code=e?.code==='P0001'?({'Work version conflict':'version_conflict','Work request conflict':'request_conflict','Work item conflict':'item_conflict'})[e.message]:null;
+    if(code)throw new adminWork.AdminWorkConflict(code);
+   }
+   throw new OrderServiceUnavailable('Test order operation rejected');
+  }
   try{return await response.json();}catch{throw new OrderServiceUnavailable('Invalid order service response');}
  }
  async function member(authorization){
@@ -50,6 +65,28 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  return Object.freeze({
   async adminAccess({authorization,ownerId}){await adminOwner(authorization,ownerId);return {test:true,allowed:true};},
   async adminOverview({authorization,ownerId}){const actor=await adminOwner(authorization,ownerId);const raw=await rpc('rr_test_admin_overview',{p_owner:ownerId,p_actor:actor});if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');return require('../test-admin.js').sanitizeAdminSnapshot(raw);},
+  async adminReserveOverview({authorization,ownerId}){
+   if(reserveReadEnabled!==true||environment.id!=='acceptance-v1'||!Array.isArray(allowedMemberIds)||allowedMemberIds.length!==2||new Set(allowedMemberIds).size!==2||!allowedMemberIds.every(v=>UUID.test(v))||!Array.isArray(allowedRefundOperatorIds)||allowedRefundOperatorIds.length<1||allowedRefundOperatorIds.length>2||new Set(allowedRefundOperatorIds).size!==allowedRefundOperatorIds.length||!allowedRefundOperatorIds.every(v=>allowedMemberIds.includes(v)))throw new OrderAccessDenied('Reserve view disabled');
+   const actor=await adminOwner(authorization,ownerId);let raw,error;
+   try{raw=await rpc('rr_test_admin_reserve_overview',{p_owner:ownerId,p_actor:actor});}catch(e){error=e;}
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   if(error)return reserveRead.coverage(error instanceof ReserveReadMissing?'schema_missing':'unavailable',{now:clock()});
+   try{return reserveRead.fromRpc(raw,{now:clock()});}catch{return reserveRead.coverage('unavailable',{now:clock()});}
+  },
+  async adminWorkList({authorization,ownerId,requestId=null,cursor=null}){
+   if(adminWorkEnabled!==true)throw new OrderAccessDenied('Private work is unavailable');
+   if(requestId!==null&&!UUID.test(requestId||''))throw new adminWork.AdminWorkInvalid('Invalid private work request');
+   if(requestId!==null&&cursor!==null)throw new adminWork.AdminWorkInvalid('Choose one private work read');
+   const after=adminWork.cursor(cursor,{now:clock()}),actor=await adminOwner(authorization,ownerId),raw=await rpc(requestId===null?'rr_test_admin_work_list':'rr_test_admin_work_receipt',{p_owner:ownerId,p_actor:actor,...(requestId===null?{p_before:after?.updatedAt??null,p_after:after?.id??null}:{p_request:requestId})});
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   return requestId===null?adminWork.list(raw,{now:clock(),cursor}):adminWork.receipt(raw,{requestId,now:clock()});
+  },
+  async saveAdminWork({authorization,ownerId,command}){
+   if(adminWorkEnabled!==true)throw new OrderAccessDenied('Private work is unavailable');
+   const checked=adminWork.command(command),actor=await adminOwner(authorization,ownerId),raw=await rpc('rr_test_write_admin_work',{p_owner:ownerId,p_actor:actor,p_command:checked});
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   return adminWork.receipt(raw,{requestId:checked.requestId,expected:checked,now:clock()});
+  },
   async settlementContext({authorization,orderId}){id(orderId);if(settlementSimulationEnabled!==true)throw new OrderAccessDenied('Settlement simulation disabled');const actor=await refundOperator(authorization);return rpc('rr_test_settlement_context',{p_actor:actor,p_order:orderId});},
   async recordSettlementBinding({authorization,orderId,evidence}){id(orderId);if(settlementSimulationEnabled!==true||evidence?.test!==true||evidence.simulationOnly!==true||evidence.source!=='stripe_sandbox'||!/^acct_[A-Za-z0-9]+$/.test(evidence.accountId||'')||evidence.bankAccountId!==null&&!/^ba_[A-Za-z0-9]+$/.test(evidence.bankAccountId||'')||!Number.isSafeInteger(evidence.checkedAt))throw new OrderAccessDenied('Verified simulation binding required');const actor=await refundOperator(authorization);return rpc('rr_test_record_settlement_binding',{p_actor:actor,p_order:orderId,p_evidence:evidence});},
   async prepareSettlement({authorization,orderId,requestId,kind,amountCents,parentRequestId=null}){id(orderId);id(requestId);if(parentRequestId!==null)id(parentRequestId);if(settlementSimulationEnabled!==true||!['transfer','payout','reversal'].includes(kind)||!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>10000000)throw new OrderAccessDenied('Invalid simulation request');const actor=await refundOperator(authorization);return rpc('rr_test_prepare_settlement',{p_actor:actor,p_order:orderId,p_request:requestId,p_kind:kind,p_amount:amountCents,p_parent:parentRequestId});},

@@ -62,7 +62,7 @@ function harness({loseLabelResponse=false}={}){
     const id={'Bearer buyer':B,'Bearer seller':S}[options.headers.Authorization];return Response.json(id?{id}:{},{status:id?200:401});
    }
    const name=u.pathname.split('/').pop();assert.ok(allowed.has(name),'Unexpected RPC '+name);
-   assert.equal(options.headers.Authorization,'Bearer sb_secret_shippingFixture');
+   assert.equal(options.headers.Authorization,undefined);assert.equal(options.headers.apikey,'sb_secret_shippingFixture');
    if(!names.has(name))names.set(name,(await db.query("select proargnames names from pg_proc where proname=$1 and pronamespace='public'::regnamespace",[name])).rows[0].names);
    const p=JSON.parse(options.body),keys=names.get(name);assert.deepEqual(Object.keys(p).sort(),[...keys].sort());
    try{return Response.json(await rpc(name,keys.map(k=>p[k]&&typeof p[k]==='object'?JSON.stringify(p[k]):p[k])));}

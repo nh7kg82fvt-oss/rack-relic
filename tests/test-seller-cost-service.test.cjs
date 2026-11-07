@@ -63,7 +63,7 @@ test('HTTP guard rejects ambiguous query, wrong method, large input and hides pr
 test('repository reauthenticates every cost operation and derives actor from identity, never the browser',async()=>{
  const calls=[],repo=createTestOrderRepository({projectUrl:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',serviceKey:'sb_secret_fixture',allowedMemberIds:[S,B],sellerCostsEnabled:true,fetchImpl:async(url,options)=>{calls.push([url,options]);return url.endsWith('/auth/v1/user')?Response.json({id:S}):Response.json({test:true});}});
  await repo.sellerCostContext({...input,actor:B});await repo.prepareSellerCostDisclosure({...input,document:'{}',hash:'a'.repeat(64),actor:B});await repo.acceptSellerCosts({...input,disclosureHash:'a'.repeat(64),actor:B});
- assert.equal(calls.filter(v=>v[0].endsWith('/auth/v1/user')).length,3);for(const [url,o]of calls.filter(v=>v[0].includes('/rpc/'))){assert.equal(JSON.parse(o.body).p_actor,S);assert.equal(o.headers.Authorization,'Bearer sb_secret_fixture');assert.equal(o.cache,'no-store');}
+ assert.equal(calls.filter(v=>v[0].endsWith('/auth/v1/user')).length,3);for(const [url,o]of calls.filter(v=>v[0].includes('/rpc/'))){assert.equal(JSON.parse(o.body).p_actor,S);assert.equal(o.headers.Authorization,undefined);assert.equal(o.headers.apikey,'sb_secret_fixture');assert.equal(o.cache,'no-store');}
  const off=createTestOrderRepository({projectUrl:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',serviceKey:'sb_secret_fixture',fetchImpl:()=>assert.fail('network')});await assert.rejects(off.sellerCostContext(input),OrderAccessDenied);
 });
 test('cost runtime stays private and off by default, including with synthetic cap fixtures configured',async()=>{

@@ -28,7 +28,7 @@ test('malformed, future, stale or cached source evidence fails closed without pr
  for(const headers of [{age:'1'},{'cf-cache-status':'HIT'}]){const x=await call({headers});assert.equal(x.res.statusCode,503);}
 });
 test('shell and public configuration contain only test identity and defensive privacy policy',async()=>{
- const config=await call({url:'/api/test-admin?action=config'});assert.equal(config.calls.length,0);assert.deepEqual(Object.keys(config.res.data).sort(),['test','live','environmentId','projectUrl','returnUrl'].sort());
+ const config=await call({url:'/api/test-admin?action=config'});assert.equal(config.calls.length,0);assert.deepEqual(Object.keys(config.res.data).sort(),['test','live','environmentId','projectUrl','returnUrl','workEnabled','reserveReadEnabled','reserveReadVersion'].sort());assert.equal(config.res.data.workEnabled,false);
  const shell=await call({url:'/api/test-admin'});assert.equal(shell.res.statusCode,200);assert.equal(shell.calls.length,0);assert.match(shell.res.body,/PRIVATE TEST AREA/);assert.match(shell.res.headers['Content-Security-Policy'],/connect-src 'self'/);assert.equal(shell.res.headers['X-Robots-Tag'],'noindex, nofollow');assert.equal(/<form|onclick=|analytics|googletag/i.test(shell.res.body),false);assert.equal(/id="counts"|id="orders"|id="cases"|Source observations/.test(shell.res.body),false);
 });
 test('shared projection rejects wrong browser environment and fabricated healthy source labels',()=>{

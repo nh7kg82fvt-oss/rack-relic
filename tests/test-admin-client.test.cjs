@@ -5,7 +5,8 @@ const {TEST_ENVIRONMENTS}=require('../server/test_environment_registry.cjs');
 const ENVIRONMENTS=require('../test-environments.js');
 const A=TEST_ENVIRONMENTS.acceptance,L=TEST_ENVIRONMENTS.legacy,OP='11111111-1111-4111-8111-111111111111',O='22222222-2222-4222-8222-222222222222';
 const tick=()=>new Promise(r=>setImmediate(r));
-function setup({environment=A,configPatch={},origin=environment.previewOrigin,signed=true,onOverview,oldLegacySession=false}={}){
+const textOf=node=>[node.textContent,...node.children.map(textOf)].join(' ');
+function setup({environment=A,configPatch={},origin=environment.previewOrigin,signed=true,onOverview,oldLegacySession=false,workModule}={}){
  let now=Date.now(),next=0,reads=0;const nodes=new Map(),timers=new Map(),calls=[],events={},docEvents={},key='rr-private-test-session'+(environment.id==='acceptance-v1'?':acceptance-v1':''),saved=new Map();
  const session=JSON.stringify({token:'test-operator-token',member:OP,email:'not-rendered@example.invalid'});if(signed)saved.set(key,session);if(oldLegacySession)saved.set('rr-private-test-session',session);
  const element=tag=>({set id(value){nodes.set(value,this);},tag,textContent:'',children:[],hidden:false,disabled:false,events:{},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},addEventListener(k,fn){this.events[k]=fn;},fire(k='click'){return this.events[k]?.({});}});
@@ -17,12 +18,12 @@ function setup({environment=A,configPatch={},origin=environment.previewOrigin,si
  const storage={getItem:k=>{reads++;return saved.get(k)??null;},setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)};
  const valid=()=>projectAdminOverview({test:true,live:false,releaseEnabled:false,observedAt:new Date(now).toISOString(),counts:{orders:1,paidOrders:1,heldOrders:1,sellers:1,openCases:0,alertDeliveryGaps:0},orders:[{orderRef:O,state:'paid',riskStatus:'review',refundState:'none',totalCents:3502,observedAt:new Date(now-10000).toISOString(),holdRequired:true}],cases:[],hasMoreOrders:false,hasMoreCases:false,sources:{stripeObservedAt:new Date(now-600000).toISOString(),sellerObservedAt:null,shippingObservedAt:null}},{environmentId:environment.id,now});
  let overviewNumber=0;const fetchImpl=async(url,options)=>{calls.push({url,options});assert.equal(options.method,'GET');assert.equal(options.cache,'no-store');if(url.endsWith('config'))return Response.json({test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,...configPatch});assert.equal(url,'/api/test-admin?action=overview');assert.ok(options.headers.Authorization.startsWith('Bearer '));const n=++overviewNumber;if(onOverview)return onOverview(n,valid,options);return Response.json(valid());};
- const client=mount({document,window,fetchImpl,storage,environments:ENVIRONMENTS,setTimer,clearTimer,clock:()=>now});
+ const client=mount({document,window,fetchImpl,storage,environments:ENVIRONMENTS,workModule,setTimer,clearTimer,clock:()=>now});
  const flatten=node=>[node,...node.children.flatMap(flatten)];
  return {client,get,saved,key,timers,calls,events,docEvents,document,session,valid,storageReads:()=>reads,all:()=>[...nodes.values()].flatMap(flatten),overviewCalls:()=>calls.filter(c=>c.url.endsWith('overview')),advance:n=>now+=n,async timer(){const [id,t]=[...timers][0]||[];assert.ok(t,'scheduled poll');timers.delete(id);now+=t.delay;t.fn();await tick();}};
 }
 test('private overview reuses scoped session, polls every 30 seconds and performs no financial/provider requests',async()=>{
- const x=setup();await tick();assert.equal(x.overviewCalls().length,1);assert.equal(x.get('overview').hidden,false);assert.equal([...x.timers.values()][0].delay,30000);assert.match(x.get('as-of').textContent,/Database snapshot/);assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/older than five minutes/.test(p.textContent))));assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/Vercel service status and logs unavailable/.test(p.textContent))));assert.equal(JSON.stringify(x.all()).includes('not-rendered@example'),false);
+ const x=setup();await tick();assert.equal(x.overviewCalls().length,1);assert.equal(x.get('overview').hidden,false);assert.equal([...x.timers.values()][0].delay,30000);assert.match(x.get('as-of').textContent,/Records last updated/);assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/more than five minutes/.test(p.textContent))));assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/Website errors and availability are not connected/.test(p.textContent))));assert.equal(JSON.stringify(x.all()).includes('not-rendered@example'),false);
  await x.timer();assert.equal(x.overviewCalls().length,2);assert.equal(x.timers.size,1);assert.ok(x.calls.every(c=>c.options.method==='GET'&&c.url.startsWith('/api/test-admin?')));x.client.destroy();assert.equal(x.timers.size,0);
 });
 test('manual refresh cannot overlap an existing request and hidden pages cancel/clear until focus returns',async()=>{
@@ -44,12 +45,50 @@ test('mixed environment configuration fails before any session read and legacy s
  const missing=setup({signed:false,oldLegacySession:true});await tick();assert.equal(missing.overviewCalls().length,0);assert.equal(missing.saved.has('rr-private-test-session'),true);assert.match(missing.get('notice').textContent,/Sign in/);missing.client.destroy();
 });
 test('malformed or cached responses clear stale data and remain unavailable instead of looking healthy',async()=>{
- for(const bad of [valid=>{const d=valid();d.sources.stripe.state='healthy';return Response.json(d);},valid=>Response.json(valid(),{headers:{'cf-cache-status':'HIT'}}),valid=>{const d=valid();d.environmentId=L.id;return Response.json(d);}]){const x=setup({onOverview:async(n,valid)=>n===1?Response.json(valid()):bad(valid)});await tick();await x.client.refresh();assert.equal(x.get('overview').hidden,true);assert.equal(x.get('orders').children.length,0);assert.match(x.get('notice').textContent,/provider health is unknown/);assert.equal(x.saved.has(x.key),true);x.client.destroy();}
+ for(const bad of [valid=>{const d=valid();d.sources.stripe.state='healthy';return Response.json(d);},valid=>Response.json(valid(),{headers:{'cf-cache-status':'HIT'}}),valid=>{const d=valid();d.environmentId=L.id;return Response.json(d);}]){const x=setup({onOverview:async(n,valid)=>n===1?Response.json(valid()):bad(valid)});await tick();await x.client.refresh();assert.equal(x.get('overview').hidden,true);assert.equal(x.get('orders').children.length,0);assert.match(x.get('notice').textContent,/current status of Stripe and shipping is unknown/);assert.equal(x.saved.has(x.key),true);x.client.destroy();}
 });
 test('blur cancels polling and focus performs a fresh non-overlapping read',async()=>{
  const x=setup();await tick();x.events.blur();assert.equal(x.timers.size,0);assert.equal(x.get('overview').hidden,true);await x.client.refresh();assert.equal(x.overviewCalls().length,1);x.events.focus();await tick();assert.equal(x.overviewCalls().length,2);assert.equal(x.timers.size,1);x.client.destroy();
 });
 
 test('a provider observation aging past five minutes in flight becomes stale without losing the authorized database snapshot',async()=>{
- let finish;const blocked=new Promise(r=>finish=r);const x=setup({onOverview:async(n,valid)=>n===2?blocked:Response.json(valid())});await tick();const work=x.client.refresh();await tick();const data=x.valid();data.sources.stripe.observedAt=new Date(Date.parse(data.observedAt)-299999).toISOString();data.sources.stripe.state='stored_evidence';x.advance(1000);finish(Response.json(data));await work;assert.equal(x.get('overview').hidden,false);assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/older than five minutes/.test(p.textContent))));x.client.destroy();
+ let finish;const blocked=new Promise(r=>finish=r);const x=setup({onOverview:async(n,valid)=>n===2?blocked:Response.json(valid())});await tick();const work=x.client.refresh();await tick();const data=x.valid();data.sources.stripe.observedAt=new Date(Date.parse(data.observedAt)-299999).toISOString();data.sources.stripe.state='stored_evidence';x.advance(1000);finish(Response.json(data));await work;assert.equal(x.get('overview').hidden,false);assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/more than five minutes/.test(p.textContent))));x.client.destroy();
+});
+
+test('owner attention follows the refreshed deadline and clears its private case on hide and sign-out',async()=>{
+ let dueBy;const caseRef='case_'+'a'.repeat(32);
+ const x=setup({onOverview:async(n,valid)=>{const data=valid();dueBy||=new Date(Date.parse(data.observedAt)+10000).toISOString();data.cases=[{caseRef,orderRef:O,kind:'dispute',status:'needs_response',requiresResponse:true,dueBy,observedAt:data.observedAt,holdRequired:true}];data.counts.openCases=1;return Response.json(data);}});
+ await tick();assert.match(textOf(x.get('attention').children[0]),/Response due within 24 hours/);
+ assert.match(textOf(x.get('attention').children[0]),new RegExp(caseRef));
+ await x.timer();assert.match(textOf(x.get('attention').children[0]),/deadline reached or overdue/);
+ x.document.hidden=true;x.document.visibilityState='hidden';x.docEvents.visibilitychange();
+ assert.equal(x.get('attention').children.length,0);assert.equal(x.get('overview').hidden,true);
+ x.document.hidden=false;x.document.visibilityState='visible';x.docEvents.visibilitychange();await tick();
+ assert.match(textOf(x.get('attention').children[0]),/deadline reached or overdue/);
+ x.get('logout').fire();assert.equal(x.get('attention').children.length,0);assert.equal(x.get('overview').hidden,true);
+ assert.ok(x.calls.every(c=>c.options.method==='GET'&&c.url.startsWith('/api/test-admin?')));x.client.destroy();
+});
+
+test('control center explains next steps and saved payment states without suggesting release authority',async()=>{
+ const x=setup();await tick();const view=textOf(x.get('overview'));
+ assert.equal(x.get('page-title').textContent,'Rack Relic control center');
+ assert.match(view,/view-only/);assert.match(view,/cannot approve payments, issue refunds or pay sellers/);
+ assert.match(view,/Practice payment recorded/);assert.match(view,/Payment review needed/);assert.match(view,/No refund recorded/);assert.match(view,/Seller money stays on hold/);
+ assert.ok(x.get('attention').children.every(item=>/Next step:/.test(textOf(item))));
+ assert.equal(x.all().some(n=>n.tag==='a'&&n.href?.includes('action=release')),false);
+ assert.ok(x.calls.every(c=>c.options.method==='GET'));x.client.destroy();
+});
+
+test('private task tools preserve unsaved inputs during polling and lose access with the owner view',async()=>{
+ const mounted=[];const workModule={mount(options){const state={...options,refreshes:0,destroyed:false};mounted.push(state);options.root.append({tag:'p',textContent:'unsaved private note',children:[]});return {refresh(){state.refreshes++;},destroy(){state.destroyed=true;options.root.replaceChildren();}};}};
+ const x=setup({configPatch:{workEnabled:true},workModule});await tick();assert.equal(mounted.length,1);const original=mounted[0],root=original.root;assert.equal(original.session().member,OP);
+ await x.timer();assert.equal(mounted.length,1);assert.equal(original.refreshes,2);assert.match(textOf(root),/unsaved private note/);
+ x.events.blur();assert.equal(original.destroyed,true);assert.equal(original.session(),null);assert.equal(root.children.length,0);
+ x.events.focus();await tick();assert.equal(mounted.length,2);original.onAccessLost();assert.equal(x.saved.has(x.key),true);assert.equal(x.get('overview').hidden,false);
+ x.get('logout').fire();assert.equal(mounted[1].destroyed,true);assert.equal(mounted[1].session(),null);x.client.destroy();
+});
+test('task tools stay unavailable unless their explicit boolean flag is enabled',async()=>{
+ let mounts=0;const workModule={mount(){mounts++;throw Error('must not mount');}};
+ const x=setup({workModule});await tick();assert.equal(mounts,0);assert.match(textOf(x.get('work-tools')),/not connected/);x.client.destroy();
+ const invalid=setup({configPatch:{workEnabled:'true'},workModule});await tick();assert.equal(invalid.storageReads(),0);assert.equal(invalid.get('overview').hidden,true);assert.equal(mounts,0);invalid.client.destroy();
 });

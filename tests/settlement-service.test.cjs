@@ -47,7 +47,7 @@ function harness(config={}){
  const repository=createTestOrderRepository({projectUrl:PROJECT,serviceKey:'sb_secret_fixture',allowedMemberIds:[S,B],allowedRefundOperatorIds:[S],refundsEnabled:true,refundRequestsEnabled:true,sellerCostsEnabled:true,settlementSimulationEnabled:true,...config.repositoryOptions,fetchImpl:async(url,options)=>{
   const u=new URL(url);assert.equal(u.origin,PROJECT);calls.push({scope:'database',path:u.pathname,method:options.method});
   if(u.pathname==='/auth/v1/user'){const id=options.headers.Authorization==='Bearer operator'?S:options.headers.Authorization==='Bearer buyer'?B:X;return Response.json({id});}
-  assert.equal(options.headers.Authorization,'Bearer sb_secret_fixture');const name=u.pathname.split('/').pop();assert.match(name,/^rr_test_/);
+  assert.equal(options.headers.Authorization,undefined);assert.equal(options.headers.apikey,'sb_secret_fixture');const name=u.pathname.split('/').pop();assert.match(name,/^rr_test_/);
   if(!argumentsByName.has(name))argumentsByName.set(name,(await db.query("select proargnames names from pg_proc where proname=$1 and pronamespace='public'::regnamespace",[name])).rows[0].names);
   const keys=argumentsByName.get(name),body=JSON.parse(options.body);assert.deepEqual(Object.keys(body).sort(),[...keys].sort());
   try{

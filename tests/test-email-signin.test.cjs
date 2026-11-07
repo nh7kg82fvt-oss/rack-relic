@@ -58,3 +58,6 @@ test('copied or corrupted pending proof cannot be exchanged in another environme
  await client.send('buyer@example.com');const key='rr-test-email-signin:'+row.id,pending=JSON.parse(entries.get(key));pending.projectUrl=environments[0].projectUrl;entries.set(key,JSON.stringify(pending));
  await assert.rejects(client.complete('code'),/same Chrome profile/);assert.equal(calls,1);assert.equal(entries.size,0);
 });
+
+test('project email limit is distinct from local cooldown and never repeats a send',async()=>{let calls=0;const{client,entries}=setup(async()=>{calls++;return Response.json({error_code:'over_email_send_rate_limit',message:'private provider text'},{status:429});});await assert.rejects(client.send('buyer@example.com'),e=>e.message.includes('delivery limit')&&!e.message.includes('private provider text'));assert.equal(calls,1);assert.equal(entries.size,0);});
+test('rate-limit retry advice uses only bounded provider Retry-After seconds',async()=>{for(const [header,expected]of [['120',/Wait 2 minute/],['9999999',/Please wait before/],['arbitrary',/Please wait before/]]){const{client}=setup(async()=>Response.json({},{status:429,headers:{'retry-after':header}}));await assert.rejects(client.send('buyer@example.com'),expected);}});
