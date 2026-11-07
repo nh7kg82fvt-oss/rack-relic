@@ -502,7 +502,7 @@
    $('shipping-caption').textContent='Buyer fee: $1.75 · Shipping calculated by Shippo in test mode. Tax calculated for the Seattle test destination below.';
    $('shipping-test-description').textContent='Checks Shippo with a separate synthetic 10 × 8 × 2 inch, 1 lb parcel from Seattle to New York. These prices may differ from live prices and from the destination-specific quote used in a checkout. No postage is purchased.';
   }
-  emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,projectUrl:config.projectUrl,returnUrl:config.returnUrl,environmentId:config.environmentId,storage:localStorage});if(callback){await acceptSession(await emailSignin.complete(callback));controls();return;}
+  emailSignin=createTestEmailSignin({publishableKey:config.publishableKey,projectUrl:config.projectUrl,returnUrl:config.returnUrl,environmentId:config.environmentId,storage:localStorage});if(callback){if(config.environmentId==='acceptance-v1'&&window.RackCommandCallback&&await window.RackCommandCallback.complete(callback,{fetchImpl:fetch,location}))return;await acceptSession(await emailSignin.complete(callback));controls();return;}
   let saved;try{saved=JSON.parse(privateSession.getItem('rr-private-test-session'));}catch{}
   if(saved?.token&&saved?.member){token=saved.token;member=saved.member;const version=authVersion;$('identity').textContent=saved.email||'Staging member';try{await orders();}catch{if(version===authVersion){token=null;member=null;privateSession.removeItem('rr-private-test-session');}}if(version!==authVersion)return;}
   note(new URLSearchParams(location.search).get('view')==='cancel'?'Checkout was cancelled. The item remains reserved until Stripe confirms expiry.':config.notice);controls();

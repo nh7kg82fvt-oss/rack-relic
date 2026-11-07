@@ -8,16 +8,16 @@ const item=(patch={})=>({id:ITEM,service:'stripe',title:'Check setup',note:'Priv
 const list=(items=[],patch={})=>({test:true,live:false,releaseEnabled:false,observedAt:new Date(NOW).toISOString(),items,hasMore:false,nextCursor:patch.hasMore?'cursor_next':null,...patch});
 const receipt=(body,patch={})=>({test:true,live:false,releaseEnabled:false,requestId:body.requestId,replayed:false,item:item({id:body.itemId,version:body.version+1,service:body.service,title:body.title,note:body.note,status:body.status}),...patch});
 const marker=(patch={})=>({version:1,environmentId:ENV,member:OWNER,requestId:REQUEST,itemId:ITEM,...patch});
-function setup({saved=new Map(),onFetch,crypto=true,storageFailure=false,relatedTargets=new Set()}={}){
- let current={token:'owner-session-token',member:OWNER},now=NOW,accessLost=0,next=0;
+function setup({saved=new Map(),onFetch,crypto=true,storageFailure=false,relatedTargets=new Set(),cookieMode=false}={}){
+ let current=cookieMode?{sessionRef:REQUEST,member:OWNER}:{token:'owner-session-token',member:OWNER},now=NOW,accessLost=0,next=0;
  const elements=[],calls=[],roots=[];
  const createElement=tag=>{const n={tag,children:[],textContent:'',value:'',style:{},hidden:false,disabled:false,events:{},append(...xs){this.children.push(...xs);},replaceChildren(...xs){this.children=[...xs];},setAttribute(k,v){this[k]=v;},addEventListener(k,fn){this.events[k]=fn;},fire(k='click'){return this.events[k]?.({preventDefault(){}});}};elements.push(n);return n;};
  const root=createElement('section');roots.push(root);
  const document={createElement,getElementById:id=>relatedTargets.has(id)?{}:null};
  const storage={getItem:k=>{if(storageFailure)throw Error('Storage unavailable');return saved.get(k)??null;},setItem:(k,v)=>{if(storageFailure)throw Error('Storage unavailable');saved.set(k,v);},removeItem:k=>{if(storageFailure)throw Error('Storage unavailable');saved.delete(k);}};
  const window={crypto:crypto?{randomUUID:()=>++next===1?REQUEST:ITEM}:undefined};
- const fetchImpl=async(url,options)=>{calls.push({url,options,stored:[...saved.entries()]});assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.headers.Authorization,'Bearer owner-session-token');assert.ok(url.startsWith('/api/test-admin?action=work'));return onFetch?onFetch(url,options,calls.length):Response.json(list());};
- const client=mount({root,document,window,fetchImpl,storage,session:()=>current,environmentId:ENV,onAccessLost:()=>accessLost++,clock:()=>now});
+ const fetchImpl=async(url,options)=>{calls.push({url,options,stored:[...saved.entries()]});assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.headers.Authorization,cookieMode?undefined:'Bearer owner-session-token');assert.ok(url.startsWith((cookieMode?'/api/command-center':'/api/test-admin')+'?action=work'));return onFetch?onFetch(url,options,calls.length):Response.json(list(),{headers:cookieMode?{'X-Rack-Command-Session':REQUEST}:{}});};
+ const client=mount({root,document,window,fetchImpl,storage,session:()=>current,environmentId:ENV,...(cookieMode?{endpoint:'/api/command-center',cookieSession:true}:{}),onAccessLost:()=>accessLost++,clock:()=>now});
  const flat=n=>[n,...n.children.flatMap(flat)];
  const nodes=()=>flat(root),byTag=tag=>nodes().filter(n=>n.tag===tag),button=text=>nodes().find(n=>n.tag==='button'&&n.textContent===text);
  const textOf=n=>[n.textContent,...n.children.map(textOf)].join(' ');
@@ -152,4 +152,13 @@ test('saved follow-up links only well-formed references to currently visible own
  const x=setup({relatedTargets:targets,onFetch:async()=>Response.json(list([item({note:'Case reference: '+c+'\nOrder reference: '+OTHER+'\nOrder reference: https://foreign.invalid\nCase reference: '+c})]))});await x.client.refresh();
  assert.deepEqual(x.byTag('a').map(n=>n.href),['#case-'+c,'#order-'+OTHER]);assert.equal(x.postCalls().length,0);
  targets.clear();await x.client.refresh();assert.equal(x.byTag('a').length,0);assert.match(x.text(),new RegExp(c));x.client.destroy();
+});
+
+test('cookie-authenticated follow-ups preserve original save/replay without fake bearer credentials',async()=>{
+ let attempts=0;const response=value=>Response.json(value,{headers:{'X-Rack-Command-Session':REQUEST}});
+ const x=setup({cookieMode:true,onFetch:async(url,o)=>{if(o.method==='POST'){if(++attempts===1)throw Error('reply lost');return response(receipt(JSON.parse(o.body),{replayed:true}));}return response(list());}});
+ await x.client.refresh();x.fill();x.submit();await tick();const original=x.postCalls()[0].options.body;assert.equal(x.saved.has(KEY),true);assert.equal(x.button('Save follow-up').disabled,true);x.button('Retry the same save').fire();await tick();assert.equal(x.postCalls().length,2);assert.equal(x.postCalls()[1].options.body,original);assert.equal(x.saved.has(KEY),false);assert.ok(x.calls.every(c=>c.url.startsWith('/api/command-center?')&&c.options.credentials==='same-origin'&&c.options.headers.Authorization===undefined));x.client.destroy();
+});
+test('a changed cookie-session response cannot clear an original save marker or display old private work',async()=>{
+ const saved=new Map([[KEY,JSON.stringify(marker())]]),x=setup({cookieMode:true,saved,onFetch:async()=>Response.json({code:'version_conflict'},{status:409,headers:{'X-Rack-Command-Session':OTHER}})});await x.client.refresh();assert.equal(x.accessLost(),1);assert.equal(x.root.children.length,0);assert.equal(saved.has(KEY),true);x.client.destroy();
 });

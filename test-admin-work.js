@@ -36,9 +36,10 @@
   if(payload&&(item.version!==payload.version+1||['service','title','note','status'].some(k=>item[k]!==payload[k])))throw Error('Different save contents');
   return {state:'confirmed',item};
  }
- function mount({root,document,window,fetchImpl,storage,session,environmentId,onAccessLost=()=>{},clock=Date.now}={}){
+ function mount({root,document,window,fetchImpl,storage,session,environmentId,endpoint='/api/test-admin',cookieSession=false,onAccessLost=()=>{},clock=Date.now}={}){
+  if(!['/api/test-admin','/api/command-center'].includes(endpoint)||typeof cookieSession!=='boolean'||cookieSession&&endpoint!=='/api/command-center')throw Error('Invalid follow-up transport');
   if(!root||typeof session!=='function'||!['acceptance-v1','legacy'].includes(environmentId))throw Error('Private follow-up owner context required');
-  const owner=session();if(!UUID.test(owner?.member||'')||typeof owner.token!=='string'||!/^\S{1,8192}$/.test(owner.token))throw Error('Private follow-up owner session required');
+  const owner=session();if(!UUID.test(owner?.member||'')||(cookieSession?!UUID.test(owner.sessionRef||''):typeof owner.token!=='string'||!/^\S{1,8192}$/.test(owner.token)))throw Error('Private follow-up owner session required');
   const markerKey='rr-private-admin-work-pending:'+environmentId+':'+owner.member;
   let destroyed=false,generation=0,active=null,busy=false,loaded=false,lastReadAt=null,marker=null,payload=null,markerInvalid=false,items=[],editing=null,requireReload=false,versionConflict=false;
   let pageCursor=null,nextCursor=null;const visitedPages=new Map();
@@ -57,7 +58,7 @@
   root.append(el('p','Keep private setup notes and next steps here. Saving or finishing a follow-up does not change payments, shipping, refunds or seller payouts.'),el('p','Keep passwords and payment details out of notes.'),notice,check,retry,editingHint,form,coverage,firstPage,nextPage,list);
   controls.push(service,title,note,status,save,newItem);
   const setNotice=value=>{notice.textContent=value;};
-  const sameSession=()=>{const current=session();return current?.token===owner.token&&current?.member===owner.member;};
+  const sameSession=()=>{const current=session();return (cookieSession?current?.sessionRef===owner.sessionRef:current?.token===owner.token)&&current?.member===owner.member;};
   function alive(version){if(destroyed||version!==generation)return false;if(!sameSession()){destroy();return false;}return true;}
   function updateControls(){const locked=destroyed||busy||!loaded||marker!==null||markerInvalid||requireReload;for(const n of controls)n.disabled=locked;save.disabled=locked||versionConflict;for(const n of editButtons)n.disabled=locked;check.hidden=marker===null||markerInvalid;check.disabled=busy||destroyed;retry.hidden=marker===null||payload===null||markerInvalid;retry.disabled=busy||destroyed;nextPage.disabled=locked||nextCursor===null||visitedPages.size>=100;firstPage.disabled=destroyed||busy||marker!==null||markerInvalid||pageCursor===null;}
   function resetPages(){pageCursor=null;nextCursor=null;visitedPages.clear();}
@@ -74,7 +75,7 @@
   function endRequest(version){if(!alive(version))return;busy=false;active=null;updateControls();}
   async function readResponse(response,version){
    if(!alive(version))return null;
-   if(response.status===401||response.status===403){destroy();onAccessLost();return null;}
+   if(response.status===401||response.status===403||cookieSession&&(response.ok||response.status===409)&&response.headers?.get('X-Rack-Command-Session')!==owner.sessionRef){destroy();onAccessLost();return null;}
    if(cached(response))throw Error('Cached follow-up response');
    return response;
   }
@@ -90,14 +91,14 @@
   async function refresh(){
    if(destroyed||busy)return;if(markerInvalid){updateControls();return;}if(marker)return reconcile();
    const request=startRequest();if(!request)return;
-   try{let response=await fetchImpl('/api/test-admin?action=work'+(pageCursor===null?'':'&cursor='+encodeURIComponent(pageCursor)),{method:'GET',cache:'no-store',redirect:'error',signal:request.signal,headers:{Authorization:'Bearer '+owner.token}});response=await readResponse(response,request.version);if(!response)return;if(!response.ok)throw Error('Follow-up list unavailable');const raw=await response.json();if(!alive(request.version))return;const data=validateWork(raw,{now:clock(),cursor:pageCursor,seenCursors:[...visitedPages.keys()].filter(Boolean)});
+   try{let response=await fetchImpl(endpoint+'?action=work'+(pageCursor===null?'':'&cursor='+encodeURIComponent(pageCursor)),{method:'GET',cache:'no-store',redirect:'error',signal:request.signal,credentials:'same-origin',headers:cookieSession?{}:{Authorization:'Bearer '+owner.token}});response=await readResponse(response,request.version);if(!response)return;if(!response.ok)throw Error('Follow-up list unavailable');const raw=await response.json();if(!alive(request.version))return;const data=validateWork(raw,{now:clock(),cursor:pageCursor,seenCursors:[...visitedPages.keys()].filter(Boolean)});
     const otherIds=new Set([...visitedPages].filter(([cursor])=>cursor!==(pageCursor||'')).flatMap(([,ids])=>ids));if(data.items.some(item=>otherIds.has(item.id)))throw Error('Follow-up records moved between pages');visitedPages.set(pageCursor||'',data.items.map(item=>item.id));renderList(data);loaded=true;lastReadAt=Date.parse(data.observedAt);requireReload=false;setNotice(versionConflict?'The latest list is loaded. Your unsaved form is preserved. Choose “Edit this follow-up” to load its current version before saving.':'Follow-ups loaded. You can add a note or edit saved work.');}
    catch{if(alive(request.version)){loaded=false;nextCursor=null;list.replaceChildren();coverage.textContent='';setNotice('Follow-ups could not be checked, or records changed between pages. Your unsaved form is still here. Return to the first page or refresh the control center before saving.');}}
    finally{endRequest(request.version);}
   }
   async function reconcile(){
    if(!marker||markerInvalid||destroyed||busy)return;const request=startRequest();if(!request)return;let confirmed=false;
-   try{let response=await fetchImpl('/api/test-admin?action=work&requestId='+encodeURIComponent(marker.requestId),{method:'GET',cache:'no-store',redirect:'error',signal:request.signal,headers:{Authorization:'Bearer '+owner.token}});response=await readResponse(response,request.version);if(!response)return;if(!response.ok)throw Error('Save check unavailable');const raw=await response.json();if(!alive(request.version))return;const receipt=validateReceipt(raw,marker,{now:clock(),payload});
+   try{let response=await fetchImpl(endpoint+'?action=work&requestId='+encodeURIComponent(marker.requestId),{method:'GET',cache:'no-store',redirect:'error',signal:request.signal,credentials:'same-origin',headers:cookieSession?{}:{Authorization:'Bearer '+owner.token}});response=await readResponse(response,request.version);if(!response)return;if(!response.ok)throw Error('Save check unavailable');const raw=await response.json();if(!alive(request.version))return;const receipt=validateReceipt(raw,marker,{now:clock(),payload});
     if(receipt.state==='unconfirmed'){setNotice(payload?'We cannot confirm that save yet. Check the same save, or retry that exact save. Do not create a replacement.':'We cannot confirm the previous save. Ask for help checking its request before creating another follow-up.');}
     else if(clearMarker()){confirmed=true;loaded=false;resetAfterSave();setNotice('Your save is confirmed. Checking the latest follow-ups…');}
    }catch{if(alive(request.version))setNotice('The save still needs checking. Do not create a replacement follow-up. Use “Check the same save” or ask for help.');}
@@ -106,7 +107,7 @@
   }
   async function sendPayload(){
    if(!marker||!payload||markerInvalid||destroyed||busy)return;const request=startRequest();if(!request)return;let confirmed=false,conflict=false;
-   try{let response=await fetchImpl('/api/test-admin?action=work',{method:'POST',cache:'no-store',redirect:'error',signal:request.signal,headers:{Authorization:'Bearer '+owner.token,'Content-Type':'application/json'},body:JSON.stringify(payload)});response=await readResponse(response,request.version);if(!response)return;
+   try{let response=await fetchImpl(endpoint+'?action=work',{method:'POST',cache:'no-store',redirect:'error',signal:request.signal,credentials:'same-origin',headers:{...(cookieSession?{}:{Authorization:'Bearer '+owner.token}),'Content-Type':'application/json'},body:JSON.stringify(payload)});response=await readResponse(response,request.version);if(!response)return;
     const raw=await response.json();if(!alive(request.version))return;
     if(response.status===409&&raw?.code==='version_conflict'){if(clearMarker()){loaded=false;requireReload=true;versionConflict=true;conflict=true;resetPages();setNotice('This follow-up changed since you opened it. Your unsaved form is preserved. Check the latest saved version before editing again.');}}
     else{if(!response.ok)throw Error('Save outcome not confirmed');const receipt=validateReceipt(raw,marker,{now:clock(),payload});if(receipt.state!=='confirmed')throw Error('Save outcome not confirmed');if(clearMarker()){confirmed=true;loaded=false;resetAfterSave();setNotice('Follow-up saved. Checking the latest list…');}}

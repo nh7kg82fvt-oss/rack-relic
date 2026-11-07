@@ -2,7 +2,7 @@
 (function(root,factory){
  const api=factory();
  if(typeof module==='object'&&module.exports)module.exports=api;
- else{root.RackRelicAdminOverview=api;if(root.document)api.mount({document:root.document,window:root,fetchImpl:root.fetch.bind(root),storage:root.sessionStorage,environments:root.RackRelicTestEnvironments});}
+ else{root.RackRelicAdminOverview=api;if(root.document&&!root.document.getElementById('command-signin'))api.mount({document:root.document,window:root,fetchImpl:root.fetch.bind(root),storage:root.sessionStorage,environments:root.RackRelicTestEnvironments});}
 })(globalThis,function(){
  const reserveRead=typeof module==='object'&&module.exports?require('./test-reserve-read.js'):globalThis.RackRelicReserveRead;
  const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -81,14 +81,15 @@
   items.sort((a,b)=>a.priority-b.priority||due(a)-due(b)||String(a.caseRef||'').localeCompare(String(b.caseRef||'')));
   return items;
  }
- function mount({document,window,fetchImpl,storage,environments,workModule=window.RackRelicAdminWork,setTimer=window.setTimeout.bind(window),clearTimer=window.clearTimeout.bind(window),clock=Date.now}={}){
+ function mount({document,window,fetchImpl,storage,environments,sessionProvider=null,onSessionLost=()=>{},onSignOut=null,endpoint='/api/test-admin',workModule=window.RackRelicAdminWork,setTimer=window.setTimeout.bind(window),clearTimer=window.clearTimeout.bind(window),clock=Date.now}={}){
+  if(!['/api/test-admin','/api/command-center'].includes(endpoint)||sessionProvider!==null&&typeof sessionProvider!=='function'||sessionProvider&&endpoint!=='/api/command-center')throw Error('Invalid owner session transport');
   const $=id=>document.getElementById(id),notice=text=>{$('notice').textContent=text;};
   let config=null,key=null,timer=null,controller=null,generation=0,pending=false,focused=typeof document.hasFocus==='function'?document.hasFocus():true,destroyed=false,sessionRaw=null,workClient=null,workRoot=null,layoutReady=false;
   const visible=()=>!destroyed&&focused&&document.hidden!==true&&document.visibilityState!=='hidden';
   function clearData(){workClient?.destroy();workClient=null;workRoot?.replaceChildren();workRoot=null;layoutReady=false;$('overview').hidden=true;for(const id of ['attention','counts','sources','orders','cases','reserve-read'])$(id)?.replaceChildren();$('overview').replaceChildren();$('as-of').textContent='';if($('page-title'))$('page-title').textContent='Sign in to Rack Command';}
   function stop(){generation++;if(timer!==null){clearTimer(timer);timer=null;}if(controller){controller.abort();controller=null;}pending=false;$('refresh').disabled=true;clearData();}
-  function readSession(){if(!key)return null;try{const raw=storage.getItem(key);if(typeof raw!=='string'||raw.length>16384)return null;const saved=JSON.parse(raw);if(typeof saved?.token!=='string'||!/^\S{1,8192}$/.test(saved.token)||!UUID.test(saved.member||''))return null;return {raw,token:saved.token,member:saved.member};}catch{return null;}}
-  function signedOut(message,remove=false){stop();if(remove&&key)try{storage.removeItem(key);}catch{}sessionRaw=null;$('logout').hidden=true;$('signin-link').hidden=false;notice(message||'Sign in above with your practice owner account to open your control center.');}
+  function readSession(){if(sessionProvider){const s=sessionProvider();return UUID.test(s?.member||'')&&UUID.test(s?.sessionRef||'')?{raw:s.member+':'+s.sessionRef,member:s.member,sessionRef:s.sessionRef}:null;}if(!key)return null;try{const raw=storage.getItem(key);if(typeof raw!=='string'||raw.length>16384)return null;const saved=JSON.parse(raw);if(typeof saved?.token!=='string'||!/^\S{1,8192}$/.test(saved.token)||!UUID.test(saved.member||''))return null;return {raw,token:saved.token,member:saved.member};}catch{return null;}}
+  function signedOut(message,remove=false){stop();if(remove&&key&&!sessionProvider)try{storage.removeItem(key);}catch{}if(remove&&sessionProvider)onSessionLost();sessionRaw=null;$('logout').hidden=true;$('signin-link').hidden=false;notice(message||'Sign in above with your practice owner account to open your control center.');}
   function schedule(){if(visible()&&readSession()&&timer===null)timer=setTimer(()=>{timer=null;void refresh();},30000);}
   function current(version,raw){if(generation!==version||!visible())return false;if(readSession()?.raw!==raw){stop();sessionRaw=null;notice('Your sign-in changed. Private information has been hidden.');return false;}return true;}
   const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;};
@@ -123,7 +124,7 @@
   function render(data,now){
    if(!layoutReady){clearData();layout();layoutReady=true;}else for(const id of ['attention','counts','sources','orders','cases','reserve-read'])$(id).replaceChildren();if($('page-title'))$('page-title').textContent='Rack Command';$('overview').hidden=false;$('signin-link').hidden=true;$('as-of').textContent='Records last updated: '+format(data.observedAt)+'. Each connection below shows its own last saved update.';
    if(config.workEnabled===true){
-    if(!workClient&&typeof workModule?.mount==='function'){const boundGeneration=generation,boundSession=sessionRaw;workClient=workModule.mount({root:workRoot,document,window,fetchImpl,storage,environmentId:config.environmentId,clock,session:()=>{const s=readSession();return visible()&&generation===boundGeneration&&s?.raw===boundSession?{token:s.token,member:s.member}:null;},onAccessLost:()=>{if(current(boundGeneration,boundSession))signedOut('Your owner access could not be confirmed. Sign in again using Practice sign-in above.',true);}});}
+    if(!workClient&&typeof workModule?.mount==='function'){const boundGeneration=generation,boundSession=sessionRaw;workClient=workModule.mount({root:workRoot,document,window,fetchImpl,storage,environmentId:config.environmentId,clock,endpoint,cookieSession:!!sessionProvider,session:()=>{const s=readSession();return visible()&&generation===boundGeneration&&s?.raw===boundSession?s:null;},onAccessLost:()=>{if(current(boundGeneration,boundSession))signedOut('Your owner access could not be confirmed. Sign in again to open Rack Command.',true);}});}
     if(workClient)void workClient.refresh();else{workRoot.replaceChildren();workRoot.append(text('p','Follow-up tools could not be opened. Ask for help checking their setup.'));}
    }
    for(const item of adminAttention(data,{environmentId:config.environmentId,now})){const li=document.createElement('li');li.className='attention-item '+(item.priority===0?'urgent':item.priority<=2?'review':'setup');li.append(text('strong',item.priority===0?'Act now':item.priority===1?'Due soon':item.priority<=3?'Needs review':'Setup needed'),text('p',item.message));if(item.caseRef)li.append(reference('Case',item.caseRef));if(item.dueBy)li.append(text('p','Recorded deadline: '+format(item.dueBy)));li.append(text('p','Next step: '+item.nextStep));const target=item.caseRef?'case-'+item.caseRef:['case_coverage','alert_delivery'].includes(item.kind)?'cases-heading':item.kind==='order_coverage'?'orders-heading':'sources-heading';li.append(recordLink(item.caseRef?'View this case':target==='cases-heading'?'View cases':target==='orders-heading'?'View orders':'View connections',target));$('attention').append(li);}
@@ -151,23 +152,24 @@
    const session=readSession();if(!session){signedOut();return;}
    if(sessionRaw!==null&&sessionRaw!==session.raw)stop();sessionRaw=session.raw;
    if(timer!==null){clearTimer(timer);timer=null;}pending=true;const version=generation,raw=session.raw;controller=new AbortController();const active=controller;$('refresh').disabled=true;$('logout').hidden=false;notice('Checking authorized test records…');
-   try{const response=await fetchImpl('/api/test-admin?action=overview',{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.any([active.signal,AbortSignal.timeout(20000)]),headers:{Authorization:'Bearer '+session.token}});
+   try{const response=await fetchImpl(endpoint+'?action=overview',{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.any([active.signal,AbortSignal.timeout(20000)]),credentials:'same-origin',headers:sessionProvider?{}:{Authorization:'Bearer '+session.token}});
     if(!current(version,raw))return;
-    if(response.status===401||response.status===403){signedOut('Your owner access could not be confirmed. Sign in again using Practice sign-in above.',true);return;}
+    if(response.status===401||response.status===403){signedOut('Your owner access could not be confirmed. Sign in again to open Rack Command.',true);return;}
+    if(sessionProvider&&response.headers?.get('X-Rack-Command-Session')!==session.sessionRef){signedOut('Your sign-in changed. Checking your account again…',true);return;}
     if(!response.ok||cached(response))throw Error('Private overview is unavailable; provider status remains unknown.');
     const data=await response.json();if(!current(version,raw))return;const now=clock();render(validateAdminOverview(data,{environmentId:config.environmentId,now}),now);
    }catch{if(current(version,raw)){clearData();notice('We could not load your latest information. Private details have been hidden. Try Refresh now; the current status of Stripe and shipping is unknown.');}}
    finally{if(generation===version){pending=false;if(controller===active)controller=null;$('refresh').disabled=!visible()||!readSession();schedule();}}
   }
   async function start(){
-   try{const response=await fetchImpl('/api/test-admin?action=config',{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok||cached(response))throw Error('Unavailable configuration');const value=await response.json();if(destroyed)return;
+   try{const response=await fetchImpl(endpoint+'?action=config',{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok||cached(response))throw Error('Unavailable configuration');const value=await response.json();if(destroyed)return;
     const row=Array.isArray(environments)?environments.find(e=>e.id===value.environmentId&&e.projectUrl===value.projectUrl&&e.returnUrl===value.returnUrl):null;
-    if(value.test!==true||value.live!==false||value.workEnabled!==undefined&&typeof value.workEnabled!=='boolean'||value.reserveReadEnabled!==undefined&&typeof value.reserveReadEnabled!=='boolean'||value.reserveReadEnabled===true&&(value.environmentId!=='acceptance-v1'||value.reserveReadVersion!==reserveRead.VERSION)||!row||window.location?.origin!==new URL(row.returnUrl).origin)throw Error('Unapproved test environment');
-    config=value;key='rr-private-test-session'+(row.id==='acceptance-v1'?':acceptance-v1':'');$('signin-link').href=row.returnUrl;await refresh();if(!readSession())signedOut();
+    if(!!sessionProvider!==(value.cookieSession===true)||value.test!==true||value.live!==false||value.workEnabled!==undefined&&typeof value.workEnabled!=='boolean'||value.reserveReadEnabled!==undefined&&typeof value.reserveReadEnabled!=='boolean'||value.reserveReadEnabled===true&&(value.environmentId!=='acceptance-v1'||value.reserveReadVersion!==reserveRead.VERSION)||!row||window.location?.origin!==new URL(row.returnUrl).origin)throw Error('Unapproved test environment');
+    config=value;key='rr-private-test-session'+(row.id==='acceptance-v1'?':acceptance-v1':'');$('signin-link').href=sessionProvider?'#command-signin':row.returnUrl;await refresh();if(!readSession())signedOut();
    }catch{signedOut('This practice control center is not ready to open yet. Ask for help checking its setup.');}
   }
   function cached(response){const age=response.headers?.get('age');return age!=null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase()));}
-  $('refresh').addEventListener('click',()=>void refresh());$('logout').addEventListener('click',()=>signedOut('Signed out. Private overview cleared.',true));
+  $('refresh').addEventListener('click',()=>void refresh());$('logout').addEventListener('click',()=>{signedOut('Signed out. Private overview cleared.',!sessionProvider);if(onSignOut)void onSignOut();});
   const visibility=()=>{if(!visible()){stop();notice('Overview paused while this page is hidden.');}else void refresh();};
   const blur=()=>{focused=false;stop();notice('Overview paused while this window is inactive.');},focus=()=>{focused=true;void refresh();};
   const storageChange=e=>{if(e.key===key&&readSession()?.raw!==sessionRaw){stop();sessionRaw=null;void refresh();}};

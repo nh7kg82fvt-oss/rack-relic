@@ -6,12 +6,12 @@ const {projectAdminOverview}=require('../test-admin.js');
 const adminWork=require('./admin_work_data.cjs');
 const reserveRead=require('../test-reserve-read.js');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now}={}){
+function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now,commandSession=null}={}){
  return async(req,res)=>{
   for(const [k,v]of Object.entries({'Cache-Control':'private, no-store, max-age=0','CDN-Cache-Control':'no-store','Vercel-CDN-Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'}))res.setHeader(k,v);
   const send=(status,body)=>{res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));};
   const environment=selectTestEnvironment({branch:env.VERCEL_GIT_COMMIT_REF,projectUrl:env.RACK_RELIC_TEST_SUPABASE_URL,accountId:env.RACK_RELIC_TEST_STRIPE_ACCOUNT});
-  if(env.VERCEL_ENV!=='preview'||env.RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED!=='true'||!environment){send(404,{error:'Not found'});return;}
+  if(env.VERCEL_ENV!=='preview'||env.RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED!=='true'||!environment||commandSession&&(!commandSession.config||environment.id!=='acceptance-v1')){send(404,{error:'Not found'});return;}
   let query;try{query=new URL(req.url,'https://example.invalid').searchParams;}catch{send(400,{error:'Invalid overview request'});return;}
   const action=query.get('action');
   if(req.method!=='GET'&&!(req.method==='POST'&&action==='work')){res.setHeader('Allow',action==='work'&&environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_WORK_ENABLED==='true'?'GET, POST':'GET');send(405,{error:'Method not allowed'});return;}
@@ -19,14 +19,15 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
   const workEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_WORK_ENABLED==='true';
   const reserveReadEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_RESERVE_READ_ENABLED==='true';
   if(action==='work'&&!workEnabled){send(404,{error:'Not found'});return;}
-  if(action===null){res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.end(fs.readFileSync(path.join(__dirname,'test-admin.html'),'utf8'));return;}
-  if(action==='config'){send(200,{test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,workEnabled,reserveReadEnabled,reserveReadVersion:reserveRead.VERSION});return;}
+  if(action===null){res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.end(fs.readFileSync(path.join(__dirname,commandSession?'command-center.html':'test-admin.html'),'utf8'));return;}
+  if(action==='config'){send(200,{test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,workEnabled,reserveReadEnabled,reserveReadVersion:reserveRead.VERSION,...(commandSession?{cookieSession:true}:{})});return;}
   const members=(env.RACK_RELIC_TEST_MEMBER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean),operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
   const ownerId=env.RACK_RELIC_TEST_ADMIN_OWNER_ID;
   if(!UUID.test(ownerId||'')||!members.includes(ownerId)||!operators.includes(ownerId)||members.length!==2||new Set(members).size!==2||!members.every(x=>UUID.test(x))||operators.length<1||operators.length>2||new Set(operators).size!==operators.length||!operators.every(x=>members.includes(x))||env.RACK_RELIC_TEST_REFUNDS_ENABLED!=='true'||env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED!=='true'){send(503,{error:'Private overview is being prepared'});return;}
   try{
    const repository=createTestOrderRepository({projectUrl:environment.projectUrl,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,allowedMemberIds:members,allowedRefundOperatorIds:operators,refundsEnabled:true,refundRequestsEnabled:true,adminWorkEnabled:workEnabled,reserveReadEnabled,fetchImpl,clock});
-   const authorization=req.headers?.authorization;
+   let authorization=req.headers?.authorization;
+   if(commandSession){const session=await commandSession.resolve(req,res);authorization='Bearer '+session.access;res.setHeader('X-Rack-Command-Session',session.sessionRef);}
    if(action==='access'){send(200,await repository.adminAccess({authorization,ownerId}));return;}
    if(action==='work'){
     if(req.method==='GET'){
@@ -46,6 +47,7 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
    const reserve=reserveReadEnabled?await repository.adminReserveOverview({authorization,ownerId}):reserveRead.coverage('disabled',{now:clock(),environmentId:environment.id});
    send(200,{...projectAdminOverview(raw,{environmentId:environment.id,revision:env.VERCEL_GIT_COMMIT_SHA,now:clock()}),reserve});
   }catch(e){
+   if(commandSession&&[401,403].includes(e.status)){send(e.status,{error:'Owner sign-in required'});return;}
    if(e instanceof adminWork.AdminWorkConflict){send(409,{error:e.reason==='version_conflict'?'This work item changed. Refresh before editing.':'The original save needs review. Check its request before trying again.',code:e.reason});return;}
    send(e instanceof OrderAccessDenied?403:503,{error:e instanceof OrderAccessDenied?'Owner sign-in required':action==='work'?(req.method==='POST'||query.has('requestId')?'Save could not be confirmed. Check the original request before trying again.':'Private work records are unavailable. Try refreshing. Do not create replacement saves for an uncertain request.'):'Private overview unavailable. Provider health is unverified.'});
   }

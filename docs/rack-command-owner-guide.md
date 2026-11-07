@@ -1,52 +1,58 @@
 # Rack Command
 
-This guide accompanies the prepared website update. The new layout is not yet
-published or accepted in the hosted Preview. Real payments and payouts stay off.
+Rack Command is Rack Relic's private practice workspace. Real payments, refunds
+and seller payouts remain off. CCP Command and its records stay separate.
 
-The existing private entry point is:
+## Sign in
+
+Bookmark this address:
 https://rack-relic-git-codex-prelaunch-seller-protections-rack-relic.vercel.app/api/command-center
 
-## Open your workspace
+Enter your Rack owner email and existing Rack password, then choose **Open Rack
+Command**. This is your Rack account password, not your Vercel, Microsoft email
+or database password. A password manager can fill the normal sign-in fields.
+Never put passwords or sign-in links in chat or follow-up notes.
 
-Use your Rack owner email sign-in in the same Chrome profile. After opening the
-newest email link, choose **Open Rack Command**. Keep that tab for your work; you
-can bookmark the entry point. No separate database password is needed to use the
-dashboard. The provider dashboards have their own account access.
+On your own device, select **Keep me signed in on this device**. The app uses
+Secure, HttpOnly, same-site cookies and checks your account again with Supabase
+before loading private records. Cookie retention is up to seven days at a time;
+provider session limits, sign-out, revocation and browser privacy settings can
+require sign-in sooner. It does not require a new email for each visit while
+that session is valid. Without the option, the sign-in uses browser-session
+cookies; browser session-restore settings may preserve them.
+
+If you forgot the Rack password, enter your email and expand **Forgot your
+password or prefer an email link?** Request one link and open the newest email
+once in the same browser profile. It returns directly to Rack Command. After
+signing in, expand **Account** to enter and save your own new password. An
+uncertain password-change result is shown honestly; try the new password before
+attempting another change. No passkey has been enrolled by this update.
+
+**Sign out** clears this device's active Command cookies and asks Supabase to
+revoke that session. If the provider does not confirm the request, the page says
+so; it never claims every session on every device was revoked. Delayed refresh
+or sign-out responses for an older session cannot overwrite a newer selected
+session. Provider credentials are not returned to Command's JavaScript or
+stored in its local/session storage.
 
 ## Daily flow
 
-1. Start with **Needs attention**. A case alert links to the visible case; other
-   items link to their order, case list or connection information.
-2. A case links to its related order when that order is loaded in this view.
-   Older records may require a separate authorized review; the recent lists are
-   bounded and are not a complete operations queue.
-3. When follow-up tools are active, choose **Draft follow-up** from an order or
-   case. Its opaque reference is added to the form. Review the draft and choose
-   **Save follow-up** yourself. Opening the draft sends no save or provider action.
-4. Existing unsaved work and uncertain saves are preserved. Finish the current
-   draft or use **Start a new follow-up** before drafting from another record.
-   Check the same original save when its result is uncertain.
-5. Saved notes containing a recognized case/order reference link back only when
-   that related record is currently visible. Notes remain plain text.
+1. Start with **Needs your attention**. Follow the related order or case link.
+   Recent lists are bounded; this is not a complete live operations queue.
+2. Use **Draft follow-up** to put an order/case reference into a new note. Review
+   it and choose **Save follow-up** yourself. Opening a draft sends no save.
+3. Finish an existing draft before starting another. When a save is uncertain,
+   check or retry the same original request; do not create a replacement.
+4. **Companies, connections and last updates** distinguishes saved information
+   from an actual provider check. Database/archive shortcuts are fixed Rack
+   resources; a shortcut does not prove a working backup or completed restore.
 
-**Companies and connections** separates saved information from actual provider
-health. The two fixed setup shortcuts open only Rack's isolated test database and
-its private photo archive. A shortcut does not establish a working integration or
-completed restore. Missing information stays unknown.
+Private details are hidden on sign-out, access loss and inactive/hidden pages.
+Follow-ups retain only opaque pending-save references in browser session storage,
+not passwords, session credentials or note contents. Server requests still use
+fresh sole-owner checks and the existing original-save/version safeguards.
 
-## Privacy and limits
-
-The workspace retains the existing fresh sole-owner authorization, scoped
-same-tab session, private/no-store responses and data clearing on sign-out,
-access loss or inactive/hidden pages. No new password, provider access, shared
-login, persistent session store, offline cache or service worker is introduced.
-This is a direct browser website, with a Rack Command title and icon.
-
-The task tools depend on their explicit private Preview activation. Saved
-configuration alone does not prove that activation or a hosted save/reopen test.
 Completing a task never changes an order, sends a message, issues a refund,
-buys postage, pays a seller or clears a financial hold.
-
-Customer/seller profiles, live case feeds, provider-health feeds and the complete
-backup/restore feed still need their own verified connections. CCP records,
-mailboxes, credentials and CCP Command are separate and unchanged.
+buys postage, pays a seller or clears a financial hold. Live customer/seller
+profiles, case feeds, provider health and backup/restore acceptance still require
+their own verified connections. This sign-in update does not grant live authority.
