@@ -26,7 +26,7 @@ function formEncode(body){
  add('',body);return form;
 }
 function createStripeTestTaxClient({secretKey,fetchImpl=globalThis.fetch,clock=Date.now}={}){
- if(typeof secretKey!=='string'||!/^sk_test_[A-Za-z0-9]+$/.test(secretKey))throw Error('Stripe test secret key required');
+ if(typeof secretKey!=='string'||!/^(sk|rk)_test_[A-Za-z0-9]+$/.test(secretKey))throw Error('Stripe test secret key required');
  if(typeof fetchImpl!=='function'||typeof clock!=='function')throw Error('Test transport and clock required');
  async function request(path,method='GET',body){
   let response;try{response=await fetchImpl('https://api.stripe.com'+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),headers:{Authorization:'Bearer '+secretKey,'Content-Type':'application/x-www-form-urlencoded','Stripe-Version':'2025-02-24.acacia'},...(body?{body:formEncode(body).toString()}:{})});}catch{throw Error('Stripe test tax service unavailable');}

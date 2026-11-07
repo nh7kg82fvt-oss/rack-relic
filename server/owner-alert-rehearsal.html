@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rack Relic owner alert rehearsal</title>
+<style>body{font:16px system-ui;max-width:48rem;margin:3rem auto;padding:1rem;line-height:1.5}label{display:block;margin:.7rem 0}input[type=text]{display:block;width:90%;padding:.5rem}button{padding:.7rem;margin:.4rem}#status{white-space:pre-wrap}</style>
+<h1>One owner alert rehearsal</h1><p>This sends one real test email to wayne@rackrelic.com from alerts@alerts.rackrelic.com. The case is fictional and unpaid. Live payments stay closed. Keep Vercel Authentication enabled.</p>
+<p>Sign in as the existing Rack owner. This page never displays or copies your sign-in token. Creating an account or requesting another person's email is unavailable here.</p>
+<button type="button" id="signin" disabled>Email owner sign-in link</button>
+<form id="review"><fieldset><legend>Owner: confirm current observed setup</legend>
+<label><input type="checkbox" required name="rack_team_and_domain_verified">Rack team and alerts domain verified in Resend</label>
+<label><input type="checkbox" required name="transactional_free_and_paid_extras_off">Transactional Free and paid extras off, inspected now</label>
+<label><input type="checkbox" required name="tracking_and_receiving_off">Tracking and receiving off</label>
+<label><input type="checkbox" required name="sending_key_domain_only">Sending key scoped only to alerts.rackrelic.com</label>
+<label><input type="checkbox" required name="exact_receiver_code_and_secrets_verified">Reviewed receiver source deployed; secret and enable flag verified without revealing values</label>
+<label><input type="checkbox" required name="receipt_rpc_grants_and_denials_verified">Receipt RPC installation and browser/direct-table denials tested</label>
+<label>Observed receiver revision <input type="text" id="revision" required pattern="v[1-9][0-9]{0,5}" placeholder="v4"></label>
+<label>Nonsecret review reference <input type="text" id="reference" required pattern="owner_review_[A-Za-z0-9_-]{8,80}" placeholder="owner_review_YYYYMMDD_setup"></label>
+</fieldset><button id="send" type="submit">Send the one fictional owner alert</button><button id="reconcile" type="button">Check original signed delivery</button></form>
+<p id="status" role="status">No email attempted from this page.</p>
+<script>
+/* OWNER_SIGNIN_MODULE */
+'use strict';(()=>{const form=document.getElementById('review'),send=document.getElementById('send'),check=document.getElementById('reconcile'),status=document.getElementById('status');let busy=false,attempted=false;
+const signButton=document.getElementById('signin');let signin;
+const loginParams=new URLSearchParams(location.search),callback=loginParams.get('code'),loginError=loginParams.has('error'),loginErrorCode=loginParams.get('error_code');if(location.search||location.hash)history.replaceState(null,'','/api/test-owner-alert');
+async function init(){try{const r=await fetch('/api/test-owner-alert?action=config',{redirect:'error',cache:'no-store'});if(!r.ok)throw Error('Owner sign-in configuration is unavailable.');const config=await r.json();
+signin=RackOwnerAlertSignin.createOwnerAlertSignin({publishableKey:config.publishableKey,storage:localStorage,fetchImpl:fetch,cryptoImpl:crypto,origin:location.origin});
+if(callback){const session=await signin.complete(callback);sessionStorage.setItem('rr-private-test-session:acceptance-v1',JSON.stringify(session));status.textContent='Owner signed in. No alert email sent. Review the current setup before the one test.';}
+else if(loginError){status.textContent=loginErrorCode==='otp_expired'?'This sign-in link has expired or was already used. Request a fresh owner sign-in link and open only the newest email in this Chrome profile. No alert sent.':'Owner sign-in did not finish. Request a fresh owner sign-in link. No alert sent.';}
+signButton.disabled=false;}catch(e){status.textContent=e.message;}}
+signButton.addEventListener('click',async()=>{if(!signin)return;signButton.disabled=true;try{await signin.send();status.textContent='Owner link requested. Open the newest link in this same Chrome profile, then review setup. No alert sent.';}catch(e){status.textContent=e.message;}finally{signButton.disabled=false;}});void init();
+async function act(action){if(busy||action==='send-one'&&attempted||!form.reportValidity())return;busy=true;send.disabled=true;check.disabled=true;
+try{const saved=JSON.parse(sessionStorage.getItem('rr-private-test-session:acceptance-v1')||'null');if(typeof saved?.token!=='string'||!saved.token||saved.token.length>8192)throw Error('Use the existing private practice owner sign-in in this same tab, then return here.');
+const now=Date.now(),review={version:'rr-owner-alert-action-review-v1',team:'rackrelic',domainId:'f4adcee8-bc22-4597-9aae-6d9cd6780e6a',receiverSource:'7a23e5695a0126f88b48f31b564b1172492f7e4b114c3c85f19de15fc7e8fbf3',receiverRevision:document.getElementById('revision').value,checkedAt:now,expiresAt:now+240000,evidenceReference:document.getElementById('reference').value,facts:[...form.querySelectorAll('input[type=checkbox]')].map(x=>x.name)};
+if(action==='send-one')attempted=true;
+const r=await fetch('/api/test-owner-alert',{method:'POST',redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:'Bearer '+saved.token},body:JSON.stringify({action,review})});
+const value=await r.json();if(!r.ok)throw Error(value.error||'Outcome unknown. Keep the original; do not resend.');
+status.textContent=JSON.stringify(value,null,2)+'\nAPI acceptance is not delivery. Signed delivery is not proof the owner read it. Keep all financial holds.';
+}catch(e){status.textContent=e.message+'\nDo not retry a send. Check only the original signed delivery.';}
+finally{busy=false;send.disabled=attempted;check.disabled=false;}}
+form.addEventListener('submit',e=>{e.preventDefault();void act('send-one');});check.addEventListener('click',()=>{void act('reconcile');});})();
+</script></html>

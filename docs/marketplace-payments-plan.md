@@ -2,6 +2,29 @@
 
 Reviewed October 30, 2026 (Pacific). Source baseline: `884b380ae7a35a772543cff127b77ae451796d5d`.
 
+## Current fee decision — November 2, 2026 (Pacific)
+
+The owner approved **5% of the order's item subtotal plus $0.50 once per order**,
+including a bundle when bundle checkout is supported. Shipping and tax are
+separate. This replaces the earlier 4%, and the intermediate 5%-without-fixed-fee
+proposal, for **new** orders only. Saved historical quotes, payments and refunds
+retain their original `rr-fees-v1` amounts. New reservations explicitly select
+`rr-fees-v2`; do not rewrite old snapshots or historical acceptance evidence.
+
+Sellers bear actual processing and clearly disclosed, accepted provider costs
+attributable to their sales, including selected extra insurance. Rack Relic
+retains the platform fee as revenue for operations and reserves; it is not a
+promise of net profit or no losses. Provider costs are billed to Rack Relic
+first. Unsuccessful payment attempts, refunds, recovery failures and unallocated
+provider charges can still leave platform costs. Do not silently assign those
+costs to unrelated sellers.
+
+The new source implementation and private cost-consent rehearsal are described
+in [fee policy and seller costs](fee-policy-and-seller-costs.md). They are staged
+for review. No live Stripe upgrade, agreement acceptance or launch is performed.
+Sections reporting earlier sandbox observations below retain their original
+amounts and describe the evidence at that time.
+
 ## Owner direction: follow Depop's marketplace model
 
 On November 2, 2026 (Pacific), Wayne directed: “I want to be setup just like depop.” This supersedes the older request to permit replicas. Adopt Depop as the functional reference for Rack Relic's checkout, seller onboarding, shipping, returns and dispute experience, while identifying Rack Relic LLC as the operator. This is a target specification, not a claim of feature completion or Stripe approval.
@@ -12,7 +35,7 @@ On November 2, 2026 (Pacific), Wayne directed: “I want to be setup just like d
 - Provide a compliant guardian path for under-18 sellers before enabling their paid sales. Do not collect a child's identity as if they were an independent adult, or expose identity/tax/bank documents in messages or listings.
 - Target tracked shipping, seller label access, buyer/seller order history and notifications. Define the payout release rule and dispute holds with the actual Stripe funds flow; do not represent shipping status alone as provider payout confirmation.
 - Target a 30-day purchase-date reporting window for non-delivery, damage or significantly-not-as-described claims, with evidence, seller response, support escalation and approved return instructions. Build and verify full-refund handling, fee/shipping/tax adjustments and post-transfer recovery before publishing a buyer-protection promise. Depop's protection program does not cover Rack Relic orders.
-- Preserve Rack Relic's existing proposed fee structure (4% item-only buyer fee, no fixed-dollar buyer fee, no seller platform fee, actual processing costs borne by seller) until a specific fee change is approved. This direction does not by itself replace Rack Relic's prices with Depop's.
+- Use the current approved 5% plus $0.50 once-per-order buyer fee described above. Keep seller actual-cost deductions clear, agreed and attributable; Depop remains a functional reference rather than a claim of identical provider pricing or protection.
 - Keep existing staging-only development boundaries. Live account activation, bank connection, live Stripe/Connect verification, production configuration and launch acceptance remain outstanding. No live payments or main merge are performed by this specification update.
 
 Acceptance evidence required: hosted seller onboarding/status and member isolation; compliant age/guardian eligibility; buyer checkout and verified payment webhook; inventory race protection; tracked shipping and private label delivery; seller settlement/payout and failure handling; returns/disputes and full/partial refunds before and after transfer; ledger/tax reconciliation; durable notifications; moderation/support operation; and production recovery checks. Automated checks are separate from hosted acceptance.
@@ -31,7 +54,7 @@ No live account activation is required to develop against a sandbox. A Stripe lo
 
 This branch adds server-only test checkout, signed webhook handling, a Tax adapter, a private test order repository, an isolated PostgreSQL ledger migration and fraud-hold logic. Provider HTTP paths use mocked transports in tests, while the order SQL executes under PGlite PostgreSQL. It adds **no public route**, transfer/refund executor, live account creation, production migration, checkout UI or runtime secrets. The new test migration has not been applied remotely. Sandbox Tax settings were subsequently configured through the connected account as described below. The existing public Buy button and manifest remain closed. No production deployment or database state was inspected or changed by this review.
 
-## What main actually contains
+## October 30 source-baseline assessment of main
 
 | Existing component | Reuse | Still required |
 | --- | --- | --- |
@@ -68,11 +91,11 @@ An ordinary single-merchant account or a payout-only API is not a substitute for
 
 ## Fees and funds flow
 
-Preserve the current proposed commercial model: buyer platform fee = 4% of item price, no fixed fee; shipping and tax separate; sellers bear actual processing cost. No fee policy is changed in this branch. Define rounding per order in integer cents (nearest cent, half up) and disclose the seller's expected net before listing/acceptance.
+For new v2 orders use the owner-approved buyer fee of 5% of the item subtotal, rounded to integer cents (nearest cent, half up), plus $0.50 once per order. Shipping and tax are separate. Sellers pay actual, agreed attributable provider costs. Disclose estimated proceeds and accepted cost ceilings; unresolved costs remain held. Existing v1 order amounts and the historical example below stay unchanged.
 
-For a **hypothetical tax-free test** of a $25 item, $1 buyer fee and $5 shipping: buyer total is $31. At 2.9% + $0.30, illustrative processing is $1.20, leaving seller proceeds of $23.80, platform revenue of $1, and $5 earmarked for postage. Real tax must come from a calculation, and actual processor fees must come from the charge's balance transaction, not this estimate. Connect costs, tax tooling, support, disputes and postage adjustments are additional. The $2 active-seller monthly cost alone can exceed the $1 revenue from a seller's single $25 sale.
+For the **historical v1 hypothetical tax-free test** of a $25 item, $1 buyer fee and $5 shipping: buyer total is $31. At 2.9% + $0.30, illustrative processing is $1.20, leaving seller proceeds of $23.80, platform revenue of $1, and $5 earmarked for postage. Real tax must come from a calculation, and actual processor fees must come from the charge's balance transaction, not this estimate. Connect costs, tax tooling, support, disputes and postage adjustments are additional. The $2 active-seller monthly cost alone can exceed the $1 revenue from a seller's single $25 sale.
 
-Store separate ledger entries for buyer funds, item proceeds, buyer fee, tax liability, postage funding, actual processing fees, seller transfers, refunds, disputes and adjustments. Do not pay collected sales tax to sellers. Decide who bears Connect costs, failed postage adjustments, refund processing losses, negative seller balances and buyer-fee refunds before live launch. Current copy only allocates payment-processing costs, not every possible cost.
+Store separate ledger entries for buyer funds, item proceeds, buyer fee, tax liability, postage funding, actual processing fees, seller transfers, refunds, disputes and adjustments. Do not pay collected sales tax to sellers. Decide who bears Connect costs, failed postage adjustments, refund processing losses, negative seller balances and buyer-fee refunds before live launch. The current draft also allocates agreed attributable provider costs. Their complete verified schedule, actual-cost ingestion and recovery policy remain launch blockers; customer copy is not proof that all operating costs are recoverable.
 
 Separate charges/transfers make the platform balance responsible for Stripe fees, refunds and chargebacks. A transfer credits a connected Stripe balance; a payout moves that balance to the seller's bank. They are separate operations. Delayed transfers are not escrow or an automatic buyer-protection service. Verify permitted holding periods, payout schedules, available balances and risk rules with Stripe. A refund after transfer requires explicit reversal/recovery and may create a loss for Rack Relic.
 
@@ -102,7 +125,7 @@ Run `node --test tests/*.test.cjs` (Node with global fetch, AbortSignal.timeout 
 
 `server/marketplace_test_checkout.cjs` exports:
 
-- `buildTestCheckout(input, now)`: integer-cent order snapshot, 4% item-only fee, US shipping, current order-bound shipping/tax fixtures and availability validation. Test tax must be explicit, including a calculated zero when appropriate. The caller must provide an authenticated, reserved server snapshot.
+- `buildTestCheckout(input, now)`: integer-cent versioned order snapshot (new v2: 5% plus $0.50 once per order; historical v1: 4% with no fixed fee), US shipping, current order-bound shipping/tax fixtures and availability validation. Test tax must be explicit, including a calculated zero when appropriate. The caller must provide an authenticated, reserved server snapshot.
 - `createStripeTestCheckoutClient({secretKey, fetchImpl})`: accepts only `sk_test_` keys, sends to the fixed Stripe Checkout API with an order-bound idempotency key, checks test session identity/amount/currency and permits only the Stripe checkout host. No automatic retries. API version is `2025-02-24.acacia`; align the future sandbox webhook destination to this supported version or upgrade both after testing.
 - `verifyStripeTestEvent(rawBuffer, signature, options)`: checks HMAC on raw bytes, five-minute signature freshness, allowed event types, test mode and order metadata. Verification alone does not deduplicate events or alter an order.
 - `matchesPaidTestOrder(event, storedOrder)`: only for a previously verified event and trusted DB order; requires a complete/paid session matching the immutable amount and IDs. Persist acceptance atomically with a unique event ID.

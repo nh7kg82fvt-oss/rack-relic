@@ -6,14 +6,19 @@ const {validateLabelAttempt,publicLabel}=require('./test_label_service.cjs');
 const {publicTrackingStatus}=require('./test_tracking_service.cjs');
 const {RESPONSES,publicIssueThread}=require('./test_issue_thread.cjs');
 const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
+const {publicProtectionReview}=require('../test-protection-review.js');
+const {getTestEnvironmentByProject}=require('./test_environment_registry.cjs');
+const adminWork=require('./admin_work_data.cjs');
+const reserveRead=require('../test-reserve-read.js');
+class ReserveReadMissing extends Error{}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const PRODUCTION_PROJECT='zrfztnbyynrdzfeblkeq';
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[]}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false,sellerCostsEnabled=false,settlementSimulationEnabled=false,adminWorkEnabled=false,reserveReadEnabled=false,clock=Date.now}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
- const project=url.hostname.split('.')[0];
- if(!/^[a-z0-9]{20}$/.test(project)||url.hostname!==project+'.supabase.co'||project===PRODUCTION_PROJECT||url.protocol!=='https:'||url.port||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
+ const environment=getTestEnvironmentByProject(projectUrl);
+ if(!environment||url.origin!==environment.projectUrl||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
+ const project=environment.projectRef;
  if(typeof serviceKey!=='string'||!/^sb_secret_[A-Za-z0-9_-]+$/.test(serviceKey)){
   let claims;try{claims=JSON.parse(Buffer.from(serviceKey.split('.')[1],'base64url').toString());}catch{throw Error('Server-only test database key required');}
   if(claims.role!=='service_role'||claims.ref!==project)throw Error('Server-only test database key required');
@@ -21,9 +26,21 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  if(typeof fetchImpl!=='function')throw Error('Test transport required');
  const origin=url.origin;
  async function request(path,body,authorization){
-  let response;try{response=await fetchImpl(origin+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,Authorization:authorization||'Bearer '+serviceKey,'Content-Type':'application/json','Cache-Control':'no-store'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw new OrderServiceUnavailable('Test order service unavailable');}
+  let response;try{response=await fetchImpl(origin+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,...(authorization?{Authorization:authorization}:/^sb_secret_/.test(serviceKey)?{}:{Authorization:'Bearer '+serviceKey}),'Content-Type':'application/json','Cache-Control':'no-store'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw new OrderServiceUnavailable('Test order service unavailable');}
   const age=response.headers?.get('age');if((age!==null&&age!==undefined&&(!/^\d+$/.test(age)||Number(age)>0))||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw new OrderServiceUnavailable('Cached order authority rejected');
-  if(!response.ok){if(authorization&&[401,403].includes(response.status))throw new OrderAccessDenied('Sign in required');throw new OrderServiceUnavailable('Test order operation rejected');}
+  if(!response.ok){
+   if(authorization&&[401,403].includes(response.status))throw new OrderAccessDenied('Sign in required');
+   if(path==='/rest/v1/rpc/rr_test_admin_reserve_overview'&&[400,404].includes(response.status)){
+    let e;try{e=await response.json();}catch{}
+    if(['PGRST202','42883','42P01','42703'].includes(e?.code))throw new ReserveReadMissing('Reserve read schema missing');
+   }
+   if(path==='/rest/v1/rpc/rr_test_write_admin_work'&&[400,409].includes(response.status)){
+    let e;try{e=await response.json();}catch{}
+    const code=e?.code==='P0001'?({'Work version conflict':'version_conflict','Work request conflict':'request_conflict','Work item conflict':'item_conflict'})[e.message]:null;
+    if(code)throw new adminWork.AdminWorkConflict(code);
+   }
+   throw new OrderServiceUnavailable('Test order operation rejected');
+  }
   try{return await response.json();}catch{throw new OrderServiceUnavailable('Invalid order service response');}
  }
  async function member(authorization){
@@ -34,14 +51,55 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  const id=v=>{if(!UUID.test(v||''))throw new OrderAccessDenied('Invalid order identifier');return v;};
  const rpc=(name,args)=>request('/rest/v1/rpc/'+name,args);
  async function refundOperator(authorization){
-  if(refundsEnabled!==true||refundRequestsEnabled!==true||project!=='zvtaqzcqfdjpuwnlpzln'||!Array.isArray(allowedRefundOperatorIds)||!allowedRefundOperatorIds.length||!allowedRefundOperatorIds.every(v=>UUID.test(v)&&allowedMemberIds?.includes(v)))throw new OrderAccessDenied('Refund operator access required');
+  if(refundsEnabled!==true||refundRequestsEnabled!==true||!Array.isArray(allowedRefundOperatorIds)||!allowedRefundOperatorIds.length||!allowedRefundOperatorIds.every(v=>UUID.test(v)&&allowedMemberIds?.includes(v)))throw new OrderAccessDenied('Refund operator access required');
   const actor=await member(authorization);
   if(!allowedRefundOperatorIds.includes(actor))throw new OrderAccessDenied('Refund operator access required');return actor;
+ }
+ async function adminOwner(authorization,ownerId){
+  if(!UUID.test(ownerId||'')||!allowedRefundOperatorIds.includes(ownerId))throw new OrderAccessDenied('Owner access required');
+  const actor=await refundOperator(authorization);if(actor!==ownerId)throw new OrderAccessDenied('Owner access required');return actor;
  }
  function validChargeFee(f,orderId,total,pi){
   return f?.test===true&&f.orderId===orderId&&/^pi_[A-Za-z0-9]+$/.test(f.paymentIntentId||'')&&/^ch_[A-Za-z0-9]+$/.test(f.chargeId||'')&&/^txn_[A-Za-z0-9]+$/.test(f.balanceTransactionId||'')&&f.currency==='USD'&&Number.isSafeInteger(f.grossCents)&&f.grossCents>0&&f.grossCents<=30000000&&(total===undefined||f.grossCents===total)&&(pi===undefined||f.paymentIntentId===pi)&&Number.isSafeInteger(f.feeCents)&&f.feeCents>=0&&f.feeCents<=f.grossCents&&Number.isSafeInteger(f.netCents)&&f.netCents===f.grossCents-f.feeCents&&Number.isSafeInteger(f.checkedAt)&&Array.isArray(f.feeDetails)&&f.feeDetails.length<=20&&f.feeDetails.every(d=>['stripe_fee','tax'].includes(d?.type)&&d.currency==='USD'&&Number.isSafeInteger(d.amountCents)&&d.amountCents>=0)&&f.feeDetails.reduce((n,d)=>n+d.amountCents,0)===f.feeCents;
  }
  return Object.freeze({
+  async adminAccess({authorization,ownerId}){await adminOwner(authorization,ownerId);return {test:true,allowed:true};},
+  async adminOverview({authorization,ownerId}){const actor=await adminOwner(authorization,ownerId);const raw=await rpc('rr_test_admin_overview',{p_owner:ownerId,p_actor:actor});if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');return require('../test-admin.js').sanitizeAdminSnapshot(raw);},
+  async adminReserveOverview({authorization,ownerId}){
+   if(reserveReadEnabled!==true||environment.id!=='acceptance-v1'||!Array.isArray(allowedMemberIds)||allowedMemberIds.length!==2||new Set(allowedMemberIds).size!==2||!allowedMemberIds.every(v=>UUID.test(v))||!Array.isArray(allowedRefundOperatorIds)||allowedRefundOperatorIds.length<1||allowedRefundOperatorIds.length>2||new Set(allowedRefundOperatorIds).size!==allowedRefundOperatorIds.length||!allowedRefundOperatorIds.every(v=>allowedMemberIds.includes(v)))throw new OrderAccessDenied('Reserve view disabled');
+   const actor=await adminOwner(authorization,ownerId);let raw,error;
+   try{raw=await rpc('rr_test_admin_reserve_overview',{p_owner:ownerId,p_actor:actor});}catch(e){error=e;}
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   if(error)return reserveRead.coverage(error instanceof ReserveReadMissing?'schema_missing':'unavailable',{now:clock()});
+   try{return reserveRead.fromRpc(raw,{now:clock()});}catch{return reserveRead.coverage('unavailable',{now:clock()});}
+  },
+  async adminWorkList({authorization,ownerId,requestId=null,cursor=null}){
+   if(adminWorkEnabled!==true)throw new OrderAccessDenied('Private work is unavailable');
+   if(requestId!==null&&!UUID.test(requestId||''))throw new adminWork.AdminWorkInvalid('Invalid private work request');
+   if(requestId!==null&&cursor!==null)throw new adminWork.AdminWorkInvalid('Choose one private work read');
+   const after=adminWork.cursor(cursor,{now:clock()}),actor=await adminOwner(authorization,ownerId),raw=await rpc(requestId===null?'rr_test_admin_work_list':'rr_test_admin_work_receipt',{p_owner:ownerId,p_actor:actor,...(requestId===null?{p_before:after?.updatedAt??null,p_after:after?.id??null}:{p_request:requestId})});
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   return requestId===null?adminWork.list(raw,{now:clock(),cursor}):adminWork.receipt(raw,{requestId,now:clock()});
+  },
+  async saveAdminWork({authorization,ownerId,command}){
+   if(adminWorkEnabled!==true)throw new OrderAccessDenied('Private work is unavailable');
+   const checked=adminWork.command(command),actor=await adminOwner(authorization,ownerId),raw=await rpc('rr_test_write_admin_work',{p_owner:ownerId,p_actor:actor,p_command:checked});
+   if(await adminOwner(authorization,ownerId)!==actor)throw new OrderAccessDenied('Owner access changed');
+   return adminWork.receipt(raw,{requestId:checked.requestId,expected:checked,now:clock()});
+  },
+  async settlementContext({authorization,orderId}){id(orderId);if(settlementSimulationEnabled!==true)throw new OrderAccessDenied('Settlement simulation disabled');const actor=await refundOperator(authorization);return rpc('rr_test_settlement_context',{p_actor:actor,p_order:orderId});},
+  async recordSettlementBinding({authorization,orderId,evidence}){id(orderId);if(settlementSimulationEnabled!==true||evidence?.test!==true||evidence.simulationOnly!==true||evidence.source!=='stripe_sandbox'||!/^acct_[A-Za-z0-9]+$/.test(evidence.accountId||'')||evidence.bankAccountId!==null&&!/^ba_[A-Za-z0-9]+$/.test(evidence.bankAccountId||'')||!Number.isSafeInteger(evidence.checkedAt))throw new OrderAccessDenied('Verified simulation binding required');const actor=await refundOperator(authorization);return rpc('rr_test_record_settlement_binding',{p_actor:actor,p_order:orderId,p_evidence:evidence});},
+  async prepareSettlement({authorization,orderId,requestId,kind,amountCents,parentRequestId=null}){id(orderId);id(requestId);if(parentRequestId!==null)id(parentRequestId);if(settlementSimulationEnabled!==true||!['transfer','payout','reversal'].includes(kind)||!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>10000000)throw new OrderAccessDenied('Invalid simulation request');const actor=await refundOperator(authorization);return rpc('rr_test_prepare_settlement',{p_actor:actor,p_order:orderId,p_request:requestId,p_kind:kind,p_amount:amountCents,p_parent:parentRequestId});},
+  async dispatchSettlement({authorization,requestId}){id(requestId);if(settlementSimulationEnabled!==true)throw new OrderAccessDenied('Settlement simulation disabled');const actor=await refundOperator(authorization);return rpc('rr_test_dispatch_settlement',{p_actor:actor,p_request:requestId});},
+  async saveSettlement({authorization,requestId,providerId}){id(requestId);if(settlementSimulationEnabled!==true||!/^(?:tr|po|trr)_[A-Za-z0-9]+$/.test(providerId||''))throw new OrderAccessDenied('Invalid simulation identity');const actor=await refundOperator(authorization);return rpc('rr_test_save_settlement',{p_actor:actor,p_request:requestId,p_provider_id:providerId});},
+  async recordSettlement({authorization,requestId,evidence}){id(requestId);if(settlementSimulationEnabled!==true||evidence?.test!==true||evidence.simulationOnly!==true||evidence.source!=='stripe_sandbox'||evidence.requestId!==requestId)throw new OrderAccessDenied('Verified simulation receipt required');const actor=await refundOperator(authorization);return rpc('rr_test_record_settlement',{p_actor:actor,p_request:requestId,p_evidence:evidence});},
+  async holdSettlement({authorization,requestId,reason}){id(requestId);if(settlementSimulationEnabled!==true||!['provider_balance_insufficient','provider_outcome_unknown','provider_rejected'].includes(reason))throw new OrderAccessDenied('Invalid simulation hold');const actor=await refundOperator(authorization);return rpc('rr_test_hold_settlement',{p_actor:actor,p_request:requestId,p_reason:reason});},
+  async sellerCostContext({authorization,orderId}){id(orderId);if(sellerCostsEnabled!==true)throw new OrderAccessDenied('Seller cost review disabled');const actor=await member(authorization);return rpc('rr_test_seller_cost_context',{p_actor:actor,p_order:orderId});},
+  async prepareSellerCostDisclosure({authorization,orderId,document,hash}){id(orderId);if(sellerCostsEnabled!==true||typeof document!=='string'||Buffer.byteLength(document)>8192||!/^[a-f0-9]{64}$/.test(hash||''))throw new OrderAccessDenied('Invalid seller cost disclosure');const actor=await member(authorization);return rpc('rr_test_prepare_seller_cost_disclosure',{p_actor:actor,p_order:orderId,p_document:document,p_hash:hash});},
+  async acceptSellerCosts({authorization,orderId,disclosureHash}){id(orderId);if(sellerCostsEnabled!==true||!/^[a-f0-9]{64}$/.test(disclosureHash||''))throw new OrderAccessDenied('Saved seller disclosure required');const actor=await member(authorization);return rpc('rr_test_accept_seller_costs',{p_actor:actor,p_order:orderId,p_hash:disclosureHash});},
+  async protectionReview({authorization,orderId}){id(orderId);const actor=await refundOperator(authorization);return publicProtectionReview(await rpc('rr_test_protection_review',{p_actor:actor,p_order:orderId}),orderId);},
+  async holdSeller({authorization,orderId,reason}){id(orderId);const actor=await refundOperator(authorization);if(!['suspicious_activity','delivery_problem','verification_problem'].includes(reason))throw new OrderAccessDenied('Invalid hold reason');const r=await rpc('rr_test_hold_seller',{p_actor:actor,p_order:orderId,p_reason:reason});if(r?.test!==true||r.orderId!==orderId||r.held!==true||r.releaseEnabled!==false)throw new OrderServiceUnavailable('Seller hold unavailable');return {test:true,orderId,held:true,releaseEnabled:false};},
+  async recordSellerProtection({authorization,accountId,ready,checkedAt}){const actor=await member(authorization);if(!/^acct_[A-Za-z0-9]+$/.test(accountId||'')||typeof ready!=='boolean'||!Number.isSafeInteger(checkedAt))throw new OrderServiceUnavailable('Invalid seller evidence');const r=await rpc('rr_test_record_seller_protection',{p_actor:actor,p_account:accountId,p_ready:ready,p_checked:checkedAt});if(r?.test!==true||r.recorded!==true)throw new OrderServiceUnavailable('Seller verification not recorded');return {test:true,recorded:true};},
   async issueRefundReview({authorization,orderId}){id(orderId);const actor=await refundOperator(authorization);return publicIssueRefundReview(await rpc('rr_test_issue_refund_review',{p_actor:actor,p_order:orderId}),orderId);},
   async reviewOrderIssues({authorization}){
    const actor=await refundOperator(authorization),rows=await rpc('rr_test_issue_review',{p_actor:actor});
@@ -192,8 +250,8 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
    return rows.map(row=>Object.fromEntries(fields.filter(k=>Object.hasOwn(row,k)).map(k=>[k,row[k]])));
   },
   async acceptStripeEvent({rawBody,signature,webhookSecret,nowSeconds}){
-   const event=verifyStripeTestEvent(rawBody,signature,{secret:webhookSecret,...(nowSeconds===undefined?{}:{nowSeconds})});
-   const {name,payload}=stripeTestEventRpc(event,rawBody,{refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true});
+   const event=verifyStripeTestEvent(rawBody,signature,{secret:webhookSecret,accountId:environment.accountId,...(nowSeconds===undefined?{}:{nowSeconds})});
+   const {name,payload}=stripeTestEventRpc(event,rawBody,{accountId:environment.accountId,refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true,disputesEnabled:disputesEnabled===true});
    return rpc(name,payload);
   },
   // Assessment must come from evaluateTestCharge with freshly fetched Stripe data.

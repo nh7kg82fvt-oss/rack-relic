@@ -1,5 +1,6 @@
 'use strict';
 const {buildTestCheckout}=require('./marketplace_test_checkout.cjs');
+const {LEGACY_FEE_POLICY,CURRENT_FEE_POLICY,feePolicy}=require('./fee_policy.cjs');
 const {usAddress,destinationHash}=require('./stripe_test_tax.cjs');
 class CheckoutPending extends Error{}
 class CheckoutRateLimited extends Error{
@@ -18,7 +19,8 @@ function createTestQuoteService({shipping,tax,loadFulfillment,clock=Date.now,cap
   if(shipment?.test!==true||!Array.isArray(shipment.rates))throw Error('Test shipping unavailable');
   const rate=shipment.rates.filter(r=>r.test===true&&r.currency==='USD'&&/^[a-f0-9]{32}$/.test(r.id)&&Number.isSafeInteger(r.amountCents)&&r.amountCents>=0&&r.amountCents<=100000).sort((a,b)=>a.amountCents-b.amountCents||a.id.localeCompare(b.id))[0];
   if(!rate)throw Error('No eligible test shipping rate');
-  const input={orderId:order.id,buyerId:order.buyer_id,listing:{id:order.listing_id,seller_id:order.seller_id,price_cents:order.item_cents,updated_at:order.listing_updated_at,status:'published',moderation_status:'active',delivery_mode:'shipping'},shippingQuote:{test:true,orderId:order.id,listingId:order.listing_id,listingUpdatedAt:order.listing_updated_at,expiresAt:clock()+600000,amountCents:rate.amountCents,rateId:rate.id,destinationHash:destinationHash(destination)}};
+  const version=feePolicy(order.fee_policy_version===undefined?LEGACY_FEE_POLICY:order.fee_policy_version).version;
+  const input={orderId:order.id,buyerId:order.buyer_id,...(version===CURRENT_FEE_POLICY?{feePolicyVersion:version}:{}),listing:{id:order.listing_id,seller_id:order.seller_id,price_cents:order.item_cents,updated_at:order.listing_updated_at,status:'published',moderation_status:'active',delivery_mode:'shipping'},shippingQuote:{test:true,orderId:order.id,listingId:order.listing_id,listingUpdatedAt:order.listing_updated_at,expiresAt:clock()+600000,amountCents:rate.amountCents,rateId:rate.id,destinationHash:destinationHash(destination)}};
   const result=await tax.quote({...input,to:destination,from:origin,itemTaxCode:source.itemTaxCode,buyerFeeTaxCode:source.buyerFeeTaxCode});
   // Persist only the financial evidence, never addresses or provider payloads.
   input.taxQuote=Object.fromEntries(['test','status','country','currency','orderId','baseCents','amountCents','expiresAt','destinationHash','taxCalculationId','taxabilityReasons','blocked'].filter(k=>Object.hasOwn(result,k)).map(k=>[k,result[k]]));
@@ -63,6 +65,7 @@ function createTestCheckoutService({repository,quotes,stripe,clock=Date.now,quot
     if(!permit.allowed)throw new CheckoutRateLimited(permit.retryAfter);
    }
    const {fulfillment,...input}=await quotes.quote({order,to});
+   if(feePolicy(input.feePolicyVersion).version!==feePolicy(order.fee_policy_version===undefined?LEGACY_FEE_POLICY:order.fee_policy_version).version)throw Error('Quote fee policy does not match reservation');
    // Price, buyer and listing always come from the authenticated reservation.
    if(input.orderId!==order.id||input.buyerId!==order.buyer_id||input.listing?.id!==order.listing_id||input.listing?.seller_id!==order.seller_id||input.listing?.price_cents!==order.item_cents||input.listing?.updated_at!==order.listing_updated_at)throw Error('Quote does not match reservation');
    const snapshot=buildTestCheckout(input,clock());
