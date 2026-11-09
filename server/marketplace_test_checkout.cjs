@@ -140,7 +140,8 @@ function verifyStripeTestEvent(raw,signature,{secret,accountId=TEST_ENVIRONMENTS
   const expected=createHmac('sha256',secret).update(String(timestamp)+'.').update(raw).digest();
   if(!signatures.some(s=>/^[0-9a-f]{64}$/.test(s)&&timingSafeEqual(expected,Buffer.from(s,'hex'))))throw Error('Invalid webhook signature');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{throw Error('Invalid webhook JSON');}
-  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!==environment.accountId)throw Error('Unsupported test event');
+  // Account is nullable for platform events. Other falsey values are malformed.
+  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account!=null&&event.account!==environment.accountId)throw Error('Unsupported test event');
   if(['charge.dispute.created','charge.dispute.updated','charge.dispute.closed','radar.early_fraud_warning.created'].includes(event.type)){
     const d=event.data?.object,warning=event.type==='radar.early_fraud_warning.created';
     if(d?.livemode!==false||d.object!==(warning?'radar.early_fraud_warning':'dispute')||!(warning?/^issfr_[A-Za-z0-9]+$/:/^du_[A-Za-z0-9]+$/).test(d.id||'')||!/^ch_[A-Za-z0-9]+$/.test(d.charge||'')||d.payment_intent!=null&&!/^pi_[A-Za-z0-9]+$/.test(d.payment_intent)||!Number.isSafeInteger(event.created)||event.created<1||event.created>nowSeconds+30)throw Error('Invalid test dispute notice');
@@ -177,7 +178,7 @@ function verifyStripeTestEvent(raw,signature,{secret,accountId=TEST_ENVIRONMENTS
 // preserve the already-deployed checkout receiver until staging is upgraded.
 function stripeTestEventRpc(event,raw,{accountId=TEST_ENVIRONMENTS.legacy.accountId,refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false}={}){
   const environment=stripeEnvironment(accountId);
-  if(event?.livemode!==false||event.account&&event.account!==environment.accountId)throw Error('Wrong test event environment');
+  if(event?.livemode!==false||event.account!=null&&event.account!==environment.accountId)throw Error('Wrong test event environment');
   const s=event.data.object;
   if(event.type.startsWith('checkout.')&&(s.metadata?.integration!==integrationTag(environment,'rack_relic_test')||!matchesEnvironmentMetadata(s.metadata,environment)))throw Error('Wrong checkout environment');
   const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
@@ -202,6 +203,6 @@ function stripeTestEventRpc(event,raw,{accountId=TEST_ENVIRONMENTS.legacy.accoun
 // The success URL alone must NEVER mark an order paid.
 function matchesPaidTestOrder(event,order,{accountId=TEST_ENVIRONMENTS.legacy.accountId}={}){
   const environment=stripeEnvironment(accountId),s=event?.data?.object;
-  return !!(order?.test===true&&event?.livemode===false&&(!event.account||event.account===environment.accountId)&&['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&s?.livemode===false&&s.payment_status==='paid'&&s.status==='complete'&&s.mode==='payment'&&s.currency==='usd'&&s.metadata?.integration===integrationTag(environment,'rack_relic_test')&&matchesEnvironmentMetadata(s.metadata,environment)&&s.id===order.sessionId&&s.client_reference_id===order.orderId&&s.metadata?.order_id===order.orderId&&s.amount_total===order.totalCents);
+  return !!(order?.test===true&&event?.livemode===false&&(event.account==null||event.account===environment.accountId)&&['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)&&s?.livemode===false&&s.payment_status==='paid'&&s.status==='complete'&&s.mode==='payment'&&s.currency==='usd'&&s.metadata?.integration===integrationTag(environment,'rack_relic_test')&&matchesEnvironmentMetadata(s.metadata,environment)&&s.id===order.sessionId&&s.client_reference_id===order.orderId&&s.metadata?.order_id===order.orderId&&s.amount_total===order.totalCents);
 }
 module.exports={buildTestOrderBase,buildTestCheckout,createStripeTestCheckoutClient,verifyStripeTestEvent,stripeTestEventRpc,matchesPaidTestOrder};

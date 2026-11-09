@@ -46,7 +46,8 @@ function verifyStripeTestEvent(raw,signature,{secret,accountId=TEST_ENVIRONMENTS
   const expected=createHmac('sha256',secret).update(String(timestamp)+'.').update(raw).digest();
   if(!signatures.some(s=>/^[0-9a-f]{64}$/.test(s)&&timingSafeEqual(expected,Buffer.from(s,'hex'))))throw Error('Invalid webhook signature');
   let event;try{event=JSON.parse(raw.toString('utf8'));}catch{throw Error('Invalid webhook JSON');}
-  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account&&event.account!==environment.accountId)throw Error('Unsupported test event');
+  // Account is nullable for platform events. Other falsey values are malformed.
+  if(event?.livemode!==false||typeof event.id!=='string'||!/^evt_[A-Za-z0-9]+$/.test(event.id)||event.account!=null&&event.account!==environment.accountId)throw Error('Unsupported test event');
   if(['charge.dispute.created','charge.dispute.updated','charge.dispute.closed','radar.early_fraud_warning.created'].includes(event.type)){
     const d=event.data?.object,warning=event.type==='radar.early_fraud_warning.created';
     if(d?.livemode!==false||d.object!==(warning?'radar.early_fraud_warning':'dispute')||!(warning?/^issfr_[A-Za-z0-9]+$/:/^du_[A-Za-z0-9]+$/).test(d.id||'')||!/^ch_[A-Za-z0-9]+$/.test(d.charge||'')||d.payment_intent!=null&&!/^pi_[A-Za-z0-9]+$/.test(d.payment_intent)||!Number.isSafeInteger(event.created)||event.created<1||event.created>nowSeconds+30)throw Error('Invalid test dispute notice');
@@ -83,7 +84,7 @@ function verifyStripeTestEvent(raw,signature,{secret,accountId=TEST_ENVIRONMENTS
 // preserve the already-deployed checkout receiver until staging is upgraded.
 function stripeTestEventRpc(event,raw,{accountId=TEST_ENVIRONMENTS.legacy.accountId,refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false}={}){
   const environment=stripeEnvironment(accountId);
-  if(event?.livemode!==false||event.account&&event.account!==environment.accountId)throw Error('Wrong test event environment');
+  if(event?.livemode!==false||event.account!=null&&event.account!==environment.accountId)throw Error('Wrong test event environment');
   const s=event.data.object;
   if(event.type.startsWith('checkout.')&&(s.metadata?.integration!==integrationTag(environment,'rack_relic_test')||!matchesEnvironmentMetadata(s.metadata,environment)))throw Error('Wrong checkout environment');
   const common={p_event:event.id,p_payload_hash:createHash('sha256').update(raw).digest('hex'),p_type:event.type};
@@ -105,13 +106,33 @@ function stripeTestEventRpc(event,raw,{accountId=TEST_ENVIRONMENTS.legacy.accoun
   return {name:refundsEnabled?'rr_test_process_payment_event':'rr_test_process_event',payload};
 }
 // Included in the generated staging-only Supabase entrypoint.
+const WEBHOOK_IO_TIMEOUT_MS=10000;
+
+async function withWebhookDeadline(requestSignal,operation){
+ const expiresAt=performance.now()+WEBHOOK_IO_TIMEOUT_MS;
+ const signal=AbortSignal.any([requestSignal,AbortSignal.timeout(WEBHOOK_IO_TIMEOUT_MS)]);
+ signal.throwIfAborted();
+ let onAbort;
+ const aborted=new Promise((_,reject)=>{
+  onAbort=()=>reject(signal.reason);
+  signal.addEventListener('abort',onAbort,{once:true});
+ });
+ try{
+  const result=await Promise.race([operation(signal),aborted]);
+  signal.throwIfAborted();
+  if(performance.now()>=expiresAt)throw new DOMException('Webhook I/O deadline expired','TimeoutError');
+  return result;
+ }finally{signal.removeEventListener('abort',onAbort);}
+}
+
 export function createTestEdgeWebhook({projectUrl,accountId,serviceKey,webhookSecret,refundsEnabled=false,refundRequestsEnabled=false,disputesEnabled=false,fetchImpl=fetch}={}){
  const reply=(status,body)=>Response.json(body,{status,headers:{'Cache-Control':'private, no-store, max-age=0','Content-Type':'application/json','X-Content-Type-Options':'nosniff'}});
  const environment=getTestEnvironmentByProject(projectUrl);
  const expectedAccount=accountId??(environment?.id==='legacy'?environment.accountId:null);
+ const modernServiceKey=typeof serviceKey==='string'&&/^sb_secret_[A-Za-z0-9_-]+$/.test(serviceKey);
  let configured=!!environment&&expectedAccount===environment.accountId&&typeof webhookSecret==='string'&&/^whsec_[A-Za-z0-9]+$/.test(webhookSecret);
  if(typeof serviceKey!=='string')configured=false;
- else if(!/^sb_secret_[A-Za-z0-9_-]+$/.test(serviceKey)){
+ else if(!modernServiceKey){
   try{const claims=JSON.parse(Buffer.from(serviceKey.split('.')[1],'base64url').toString());configured=configured&&claims.role==='service_role'&&claims.ref===environment?.projectRef;}catch{configured=false;}
  }
  return async request=>{
@@ -122,17 +143,42 @@ export function createTestEdgeWebhook({projectUrl,accountId,serviceKey,webhookSe
   let event,raw;
   try{
    const reader=request.body?.getReader();if(!reader)throw Error('Missing body');
-   let length=0;const parts=[];
-   while(true){const {value,done}=await reader.read();if(done)break;length+=value.length;if(length>1048576){await reader.cancel();return reply(413,{error:'Notification too large'});}parts.push(Buffer.from(value));}
-   raw=Buffer.concat(parts,length);event=verifyStripeTestEvent(raw,signature,{secret:webhookSecret,accountId:expectedAccount});
+   let complete=false;
+   try{
+    raw=await withWebhookDeadline(request.signal,async signal=>{
+     let length=0;const parts=[];
+     while(true){
+      const {value,done}=await reader.read();
+      signal.throwIfAborted();
+      if(done){complete=true;return Buffer.concat(parts,length);}
+      length+=value.length;
+      if(length>1048576)return null;
+      parts.push(Buffer.from(value));
+     }
+    });
+   }finally{
+    if(!complete)void reader.cancel().catch(()=>{});
+    reader.releaseLock();
+   }
+   if(raw===null)return reply(413,{error:'Notification too large'});
+   event=verifyStripeTestEvent(raw,signature,{secret:webhookSecret,accountId:expectedAccount});
    if(event.account&&event.account!==expectedAccount)throw Error('Wrong account');
-  }catch{return reply(400,{error:'Invalid test notification'});}
+  }catch(error){
+   if(error?.name==='TimeoutError'||request.signal.aborted)return reply(408,{error:'Notification body deadline expired'});
+   return reply(400,{error:'Invalid test notification'});
+  }
   try{
    const {name,payload}=stripeTestEventRpc(event,raw,{accountId:expectedAccount,refundsEnabled:refundsEnabled===true,refundRequestsEnabled:refundRequestsEnabled===true,disputesEnabled:disputesEnabled===true});
-   const r=await fetchImpl(projectUrl+'/rest/v1/rpc/'+name,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey,'Content-Type':'application/json'},body:JSON.stringify(payload)});
-   if(!r.ok)return reply(503,{error:'Test order update unavailable'});
-   const age=r.headers.get('age');if(age!==null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((r.headers.get(k)||'').toUpperCase())))return reply(503,{error:'Test order update unavailable'});
-   const result=await r.json();if(typeof result?.duplicate!=='boolean'||typeof result.state!=='string')return reply(503,{error:'Test order update unavailable'});
+   const headers={apikey:serviceKey,'Content-Type':'application/json'};
+   if(!modernServiceKey)headers.Authorization='Bearer '+serviceKey;
+   const result=await withWebhookDeadline(request.signal,async signal=>{
+    const r=await fetchImpl(projectUrl+'/rest/v1/rpc/'+name,{method:'POST',redirect:'error',cache:'no-store',signal,headers,body:JSON.stringify(payload)});
+    signal.throwIfAborted();
+    if(!r.ok)return null;
+    const age=r.headers.get('age');if(age!==null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((r.headers.get(k)||'').toUpperCase())))return null;
+    return r.json();
+   });
+   if(typeof result?.duplicate!=='boolean'||typeof result.state!=='string')return reply(503,{error:'Test order update unavailable'});
    return reply(200,{received:true});
   }catch{return reply(503,{error:'Test order update unavailable'});}
  };
