@@ -2,9 +2,9 @@
 (function (root) {
   'use strict';
   const AD_POLICY = '2026-10-29', VERSION = 1, KEY = 'rack-relic-tracking-choice', TTL = 180 * 86400000;
-  const categories = ['Clothing', 'Sneakers', 'Bags', 'Accessories'];
+  const categories = ['Clothing', 'Sneakers', 'Bags', 'Accessories', 'Sunglasses'];
   const pageNames = {'/':'home','/shop':'shop','/brands':'brands','/about':'about','/seller-guide':'seller_guide','/support':'support','/tracking-privacy':'tracking_privacy'};
-  const catalogRoutes = /^\/(category\/(clothing|sneakers|bags|accessories)|style\/(vintage|streetwear|y2k|minimalist|sportswear|designer)|brand\/(louis-vuitton|nike|jordan|gucci|adidas|vintage|carhartt|stussy)|price\/(under-25|25-50|50-100|over-100))$/;
+  const catalogRoutes = /^\/(category\/(clothing|sneakers|bags|accessories|sunglasses)|style\/(vintage|streetwear|y2k|minimalist|sportswear|designer)|brand\/(louis-vuitton|nike|jordan|gucci|adidas|vintage|carhartt|stussy)|price\/(under-25|25-50|50-100|over-100))$/;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   function route(url) {
     try {
