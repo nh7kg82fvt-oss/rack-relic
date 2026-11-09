@@ -3,6 +3,7 @@
 const {randomBytes,createHash} = require('node:crypto');
 const {selectTestEnvironment} = require('./test_environment_registry.cjs');
 const {readBody} = require('./admin_work_data.cjs');
+const {createCommandOwnerSessionReader,OwnerSessionError}=require('./command_owner_session_reader.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CURRENT='__Host-rr-command-current', ACCESS='__Host-rr-command-access.', REFRESH='__Host-rr-command-refresh.', PKCE='__Host-rr-command-pkce';
 const COOKIE_AGE=7*24*60*60;
@@ -53,7 +54,8 @@ async function boundedJson(response){
   catch(error){if(error instanceof CommandSessionError)throw error;fail();}finally{reader.releaseLock();}
 }
 function createCommandSessionService({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now}={}){
-  const config=setting(env);
+  const selected=setting(env),ownerSession=createCommandOwnerSessionReader({projectUrl:selected?.projectUrl,ownerId:selected?.owner,serverKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,fetchImpl,clock});
+  const config=selected&&ownerSession.ready?selected:null;
   async function auth(path,{method='GET',body,access}={}){
     if(!config)fail(404,'Not found');let response;
     try{response=await fetchImpl(config.projectUrl+'/auth/v1/'+path,{method,cache:'no-store',redirect:'error',signal:AbortSignal.timeout(20000),headers:{apikey:config.publishableKey,...(access?{Authorization:'Bearer '+access}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}catch{fail();}
@@ -63,11 +65,9 @@ function createCommandSessionService({env=process.env,fetchImpl=globalThis.fetch
     const data=await boundedJson(response);return {ok:response.ok,status:response.status,data};
   }
   async function verified(access){
-    const decoded=claims(access,config,clock()); // Untrusted claims may only deny; GET /user verifies the signed token.
-    const user=await auth('user',{access});
-    if(!user.ok){if([400,401,403].includes(user.status))fail(401,'Please sign in to Rack Command.','signed_out');fail();}
-    if(user.data?.id!==config.owner||typeof user.data.email!=='string'||user.data.email.length>254||user.data.deleted_at||user.data.banned_until&&Date.parse(user.data.banned_until)>clock())fail(403,'This account does not have Rack Command access.','owner_required');
-    return {access,member:user.data.id,email:user.data.email,sessionRef:decoded.session_id,expiresAt:decoded.exp*1000};
+    // Only a fresh provider-verified owner JWT plus its current DB session grants access.
+    try{return {access,...await ownerSession.verify('Bearer '+access)};}
+    catch(error){if(error instanceof OwnerSessionError)fail(error.status,error.status===401?'Please sign in to Rack Command.':error.status===403?'This account does not have Rack Command access.':'Rack sign-in is temporarily unavailable.',error.code);throw error;}
   }
   function store(res,session,remember,{select=false,sessionRef}={}){
     if(typeof session?.refresh_token!=='string'||!/^[A-Za-z0-9_-]{1,1024}$/.test(session.refresh_token))fail();
@@ -85,7 +85,7 @@ function createCommandSessionService({env=process.env,fetchImpl=globalThis.fetch
   async function resolve(req,res){
     if(!config)fail(404,'Not found');let c;
     c=credentials(req);
-    if(c.access){try{const value=await verified(c.access);if(value.sessionRef!==c.sessionRef)fail(401,'Please sign in to Rack Command.','signed_out');return value;}catch(error){if(error.status!==401)throw error;}}
+    if(c.access){try{const value=await verified(c.access);if(value.sessionRef!==c.sessionRef)fail(401,'Please sign in to Rack Command.','signed_out');return value;}catch(error){if(error.status!==401||error.code==='inactive_session')throw error;}}
     if(!c.refresh){fail(401,'Please sign in to Rack Command.','signed_out');}
     try{return await fromProvider(res,await auth('token?grant_type=refresh_token',{method:'POST',body:{refresh_token:c.refresh}}),c.remember,{select:false,sessionRef:c.sessionRef});}
     catch(error){throw error;}

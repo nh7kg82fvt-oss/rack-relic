@@ -25,7 +25,7 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
   const ownerId=env.RACK_RELIC_TEST_ADMIN_OWNER_ID;
   if(!UUID.test(ownerId||'')||!members.includes(ownerId)||!operators.includes(ownerId)||members.length!==2||new Set(members).size!==2||!members.every(x=>UUID.test(x))||operators.length<1||operators.length>2||new Set(operators).size!==operators.length||!operators.every(x=>members.includes(x))||env.RACK_RELIC_TEST_REFUNDS_ENABLED!=='true'||env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED!=='true'){send(503,{error:'Private overview is being prepared'});return;}
   try{
-   const repository=createTestOrderRepository({projectUrl:environment.projectUrl,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,allowedMemberIds:members,allowedRefundOperatorIds:operators,refundsEnabled:true,refundRequestsEnabled:true,adminWorkEnabled:workEnabled,reserveReadEnabled,fetchImpl,clock});
+   const repository=createTestOrderRepository({projectUrl:environment.projectUrl,serviceKey:env.RACK_RELIC_TEST_SUPABASE_SERVER_KEY,allowedMemberIds:members,allowedRefundOperatorIds:operators,refundsEnabled:true,refundRequestsEnabled:true,adminWorkEnabled:workEnabled,reserveReadEnabled,adminOwnerId:ownerId,fetchImpl,clock});
    let authorization=req.headers?.authorization;
    if(commandSession){const session=await commandSession.resolve(req,res);authorization='Bearer '+session.access;res.setHeader('X-Rack-Command-Session',session.sessionRef);}
    if(action==='access'){send(200,await repository.adminAccess({authorization,ownerId}));return;}

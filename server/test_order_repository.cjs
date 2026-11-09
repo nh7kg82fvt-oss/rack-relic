@@ -9,12 +9,13 @@ const {publicIssueRefundReview}=require('../test-issue-refund-review.js');
 const {publicProtectionReview}=require('../test-protection-review.js');
 const {getTestEnvironmentByProject}=require('./test_environment_registry.cjs');
 const adminWork=require('./admin_work_data.cjs');
+const {createCommandOwnerSessionReader,OwnerSessionError}=require('./command_owner_session_reader.cjs');
 const reserveRead=require('../test-reserve-read.js');
 class ReserveReadMissing extends Error{}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 class OrderServiceUnavailable extends Error{}
 class OrderAccessDenied extends Error{}
-function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false,sellerCostsEnabled=false,settlementSimulationEnabled=false,adminWorkEnabled=false,reserveReadEnabled=false,clock=Date.now}={}){
+function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.fetch,allowedMemberIds,refundsEnabled=false,refundRequestsEnabled=false,allowedRefundOperatorIds=[],disputesEnabled=false,sellerCostsEnabled=false,settlementSimulationEnabled=false,adminWorkEnabled=false,reserveReadEnabled=false,adminOwnerId=null,clock=Date.now}={}){
  let url;try{url=new URL(projectUrl);}catch{throw Error('Separate test database required');}
  const environment=getTestEnvironmentByProject(projectUrl);
  if(!environment||url.origin!==environment.projectUrl||url.pathname!=='/'||url.search||url.hash)throw Error('Separate test database required');
@@ -25,6 +26,7 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
  }
  if(typeof fetchImpl!=='function')throw Error('Test transport required');
  const origin=url.origin;
+ const ownerSession=createCommandOwnerSessionReader({projectUrl,ownerId:adminOwnerId,serverKey:serviceKey,fetchImpl,clock});
  async function request(path,body,authorization){
   let response;try{response=await fetchImpl(origin+path,{method:body?'POST':'GET',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{apikey:serviceKey,...(authorization?{Authorization:authorization}:/^sb_secret_/.test(serviceKey)?{}:{Authorization:'Bearer '+serviceKey}),'Content-Type':'application/json','Cache-Control':'no-store'},...(body?{body:JSON.stringify(body)}:{})});}catch{throw new OrderServiceUnavailable('Test order service unavailable');}
   const age=response.headers?.get('age');if((age!==null&&age!==undefined&&(!/^\d+$/.test(age)||Number(age)>0))||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw new OrderServiceUnavailable('Cached order authority rejected');
@@ -56,8 +58,9 @@ function createTestOrderRepository({projectUrl,serviceKey,fetchImpl=globalThis.f
   if(!allowedRefundOperatorIds.includes(actor))throw new OrderAccessDenied('Refund operator access required');return actor;
  }
  async function adminOwner(authorization,ownerId){
-  if(!UUID.test(ownerId||'')||!allowedRefundOperatorIds.includes(ownerId))throw new OrderAccessDenied('Owner access required');
-  const actor=await refundOperator(authorization);if(actor!==ownerId)throw new OrderAccessDenied('Owner access required');return actor;
+  if(environment.id!=='acceptance-v1'||ownerId!==adminOwnerId||!UUID.test(adminOwnerId||'')||!allowedMemberIds?.includes(adminOwnerId)||!allowedRefundOperatorIds.includes(adminOwnerId)||refundsEnabled!==true||refundRequestsEnabled!==true)throw new OrderAccessDenied('Owner access required');
+  try{return (await ownerSession.verify(authorization)).member;}
+  catch(error){if(error instanceof OwnerSessionError&&[401,403].includes(error.status))throw new OrderAccessDenied('Owner access required');throw new OrderServiceUnavailable('Owner session unavailable');}
  }
  function validChargeFee(f,orderId,total,pi){
   return f?.test===true&&f.orderId===orderId&&/^pi_[A-Za-z0-9]+$/.test(f.paymentIntentId||'')&&/^ch_[A-Za-z0-9]+$/.test(f.chargeId||'')&&/^txn_[A-Za-z0-9]+$/.test(f.balanceTransactionId||'')&&f.currency==='USD'&&Number.isSafeInteger(f.grossCents)&&f.grossCents>0&&f.grossCents<=30000000&&(total===undefined||f.grossCents===total)&&(pi===undefined||f.paymentIntentId===pi)&&Number.isSafeInteger(f.feeCents)&&f.feeCents>=0&&f.feeCents<=f.grossCents&&Number.isSafeInteger(f.netCents)&&f.netCents===f.grossCents-f.feeCents&&Number.isSafeInteger(f.checkedAt)&&Array.isArray(f.feeDetails)&&f.feeDetails.length<=20&&f.feeDetails.every(d=>['stripe_fee','tax'].includes(d?.type)&&d.currency==='USD'&&Number.isSafeInteger(d.amountCents)&&d.amountCents>=0)&&f.feeDetails.reduce((n,d)=>n+d.amountCents,0)===f.feeCents;
