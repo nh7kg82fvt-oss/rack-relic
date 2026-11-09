@@ -83,7 +83,10 @@ function createStripeTestCheckoutClient({secretKey,accountId=TEST_ENVIRONMENTS.l
   }
   return Object.freeze({
     async createCheckout(input){
-      const snapshot=buildTestCheckout(input);
+      const capturedAt=Date.now(),snapshot=buildTestCheckout(input,capturedAt);
+      // Readiness can outlive either quote. Retain the original deadline so a
+      // mutable caller input cannot extend its lease while these reads run.
+      const quoteExpiresAt=Math.min(input.shippingQuote.expiresAt,input.taxQuote.expiresAt);
       await verifiedAcceptanceAccount();
       const form=new URLSearchParams({mode:'payment',integration_identifier:environment.id==='legacy'?INTEGRATION_IDENTIFIER:'rack_relic_test_nakfvqxe','adaptive_pricing[enabled]':'false',billing_address_collection:'required','payment_method_options[card][request_three_d_secure]':'any',success_url:returnOrigin+'/api/test-marketplace?view=return&session_id={CHECKOUT_SESSION_ID}',cancel_url:returnOrigin+'/api/test-marketplace?view=cancel',client_reference_id:snapshot.orderId,
         'metadata[order_id]':snapshot.orderId,'metadata[integration]':integrationTag(environment,'rack_relic_test'),...Object.fromEntries(Object.entries(environmentMetadata(environment)).map(([k,v])=>['metadata['+k+']',v])),
@@ -97,6 +100,8 @@ function createStripeTestCheckoutClient({secretKey,accountId=TEST_ENVIRONMENTS.l
         form.set(key+'[quantity]','1');form.set(key+'[price_data][currency]','usd');form.set(key+'[price_data][unit_amount]',String(amount));form.set(key+'[price_data][product_data][name]',name);
       }
       let response;
+      const dispatchAt=Date.now();
+      if(!Number.isSafeInteger(dispatchAt)||dispatchAt<capturedAt||dispatchAt>=quoteExpiresAt)throw Error('Test quote expired or clock changed; keep the order held');
       try{response=await fetchImpl('https://api.stripe.com/v1/checkout/sessions',{
         method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(20000),
         headers:{Authorization:'Bearer '+secretKey,'Content-Type':'application/x-www-form-urlencoded','Stripe-Version':STRIPE_VERSION,'Idempotency-Key':idempotencyKey(environment,'rr_test_checkout_',snapshot.orderId)},body:form.toString()
