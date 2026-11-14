@@ -1,13 +1,20 @@
 # Private preview activation and acceptance
 
-Prepared November 2, 2026 (Pacific). This is a staging checklist, not a production launch instruction. Keep PR #25 draft, preserve preview protection, and leave public checkout closed.
+Prepared November 2, 2026 (Pacific). This is a staging checklist, not a production launch instruction. Keep PR #27 draft, preserve preview protection, and leave public checkout closed.
 
 ## Confirm the targets before changing anything
 
-- Vercel: existing Rack Relic project, Preview environment, branch `test-only-marketplace-foundation` only.
-- Supabase: isolated test project `zvtaqzcqfdjpuwnlpzln`. Never apply these test migrations to production `zrfztnbyynrdzfeblkeq`.
-- Stripe: existing Rack Relic sandbox, `livemode=false`. No live keys, real merchant identities or real bank details in acceptance fixtures.
+- Use one complete immutable environment row from `server/test_environment_registry.cjs`; never mix a branch, database or Stripe account from different rows.
+- Preserve the legacy Preview branch `test-only-marketplace-foundation`, Supabase `zvtaqzcqfdjpuwnlpzln`, and Stripe sandbox `acct_1UWJZuGVbz9Pnhxd`.
+- New acceptance: Preview branch `codex/prelaunch-seller-protections`, fixed origin `https://rack-relic-git-codex-prelaunch-seller-protections-rack-relic.vercel.app`, Supabase branch `payment-acceptance` / project `tzymapahsfiyhgilsmxl`, Stripe sandbox `acct_1UXdWBGppSOhWnq8`. Its first read-only inspection confirmed zero orders, provider events, ledger entries, jobs, Auth users and Storage objects.
+- Never apply these test migrations to production `zrfztnbyynrdzfeblkeq`. Verify actual test credentials, account identity and `livemode=false` before provider requests. No real customer/card/bank fixtures.
 - Confirm the deployed commit matches the current PR head, and existing private checkout and authentication still work. A passing local suite is not hosted acceptance.
+
+## Verified infrastructure checkpoint
+
+On November 3 the owner saved a temporary payment card in the existing Vercel-managed Supabase integration. The previously approved Pro upgrade completed; Vercel read-back shows Pro, a $35/month estimate excluding overages plus applicable tax/fees, and the two original connected databases. The approved temporary branch is $0.01344/hour before tax. No replacement organization or project transfer occurred. Pro provides database backups, not copied Storage photo bytes or completed restore acceptance.
+
+The clean Stripe sandbox is now API-verified with test balance (`livemode:false`). Test Connect was enabled. Owner-approved fictional Seattle address, clothing/footwear category, exclusive tax behavior and simulated Washington registration are configured only there; they assert no live tax registration or obligation. New website credentials, users, owner UUID, migrations, receiver and matching hosted configuration still need installation and acceptance.
 
 ## Apply only the pending schema additions
 
@@ -18,6 +25,25 @@ Inspect existing staging migration state first. Do not blindly reapply earlier c
 3. `supabase/test/20261102_order_issues_review.sql` after step 2.
 4. `supabase/test/20261102_order_issues_thread.sql` after step 3.
 5. `supabase/test/20261102_order_issues_review_refunds.sql` after step 3 and the existing installed refund-request schema.
+6. `supabase/test/20261103_seller_protections.sql` after the above plus existing charge-fee, fulfillment, label and tracking migrations. This immediately enforces seller-verification and exposure gates; follow [protection activation](prelaunch-seller-protections.md) before applying it. Do not reset historical orders or assume disabling its UI flag removes its database guards.
+7. `supabase/test/20261103_provider_risk_holds.sql` after step 6. Rebuild/deploy the staging webhook receiver and configure only its sandbox event subscription before enabling dispute processing. Do not acknowledge unbound or failed notices as processed.
+8. `supabase/test/20261103_startup_policy.sql` after steps 6–7 adds the historical $100/one-unsettled-order global pilot gates, the two-business-day clock calculation, and the money-job dispatch lock. Existing unresolved fixtures continue to count; do not reset them or treat sample delivery as real delivery.
+9. `supabase/test/20261103_fee_policy_v2.sql` preserves historical 4% order evidence and selects the approved 5% plus $0.50 once per order for new reservations. Deploy the matching version-aware server before new quotes are attempted.
+10. `supabase/test/20261103_seller_costs.sql` after step 9 and the charge-fee dependencies requires an immutable disclosure and authenticated seller consent before new v2 Checkout dispatch. It freezes disclosed quotes and stores bounded reserve/actual cost allocations; it cannot release money. Follow [fee and cost acceptance](fee-policy-and-seller-costs.md).
+11. `supabase/test/20261103_startup_limit_200.sql` after steps 8–10 selects the owner-approved $200 complete buyer-order limit and matching gross allowance. The one-unsettled-order marketplace limit and all seller/release holds remain. Apply this before the sandbox settlement addition; it does not enable settlement.
+
+`supabase/proposals/startup_limit_300.sql` is **not an installation migration**.
+It is an unapproved $300 comparison for disposable local databases only. Do not
+apply it to staging, production or a provider. Neither a boundary test nor the
+owner-approved $200 ceiling proves that the business reserve is sufficient.
+
+12. `supabase/test/20261103_settlement_simulation.sql` after step 11 adds separate sandbox transfer/payout/recovery requests and accounting. Normal release guards remain. Read [sandbox settlement and recovery](sandbox-settlement-recovery.md) before activation; no real bank or live money is used.
+
+13. `supabase/test/20261103_cloud_case_alerts.sql` after the provider-risk schema in step 7 adds private case heads, a minimal paginated queue and a durable alert outbox. Its backfill preserves verified history and existing financial holds. Read [cloud case alerts](cloud-case-alerts.md). This does not configure a scheduler, notification transport, production case access or delivery. Inspect and verify these separately before claiming cloud alert coverage.
+
+14. `supabase/test/20261103_admin_overview.sql` after step 13 adds a read-only service-role projection for the single configured participating owner. Browser roles are denied. Read [private owner overview](private-admin-overview.md); another refund operator is not an admin owner.
+
+15. `supabase/test/20261103_refund_provider_inventory.sql` after the installed refund-request schema and current dispatch guards adds a private completed-refund baseline to new dispatch claims. The matching server checks Stripe's complete charge-scoped refund inventory before a new refund POST. Read [refund inventory safety](refund-provider-inventory.md). Existing records and settlement fences remain; this does not enable live refunds or provide their funding policy.
 
 Verify new tables have RLS enabled and anon/authenticated roles cannot invoke their RPCs or read their tables. Server-only RPCs accept actor IDs only from freshly verified server authentication. Never expose the Supabase server key in the browser, repository or chat.
 
@@ -25,11 +51,28 @@ Verify new tables have RLS enabled and anon/authenticated roles cannot invoke th
 
 After schema and deploy checks, use the existing preview-scoped environment configuration:
 
+For the new `acceptance-v1` branch, verify account sign-in before opening practice
+checkout. Keep `RACK_RELIC_TEST_CHECKOUT_ENABLED=false`, independently verify and
+bind exactly two member UUIDs, and save only the matching project's server and
+publishable keys. The read-only marketplace config and member-order reads then
+work without shipping credentials, a catalog selection or Stripe secret key.
+Every other marketplace action remains closed. Owner overview access still
+requires its own complete verified owner/operator binding, participation and
+flags below; a successful member login does not grant owner access. Confirm the
+owner-only link and support-user denial with actual hosted sessions. This is a
+source capability, not evidence that those hosted inputs are installed.
+
+- `RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED=true` only after installing step 14 and binding exactly one verified `RACK_RELIC_TEST_ADMIN_OWNER_ID` from the matching private Auth project. The owner must also be a participating test member/operator; do not put an email or browser role into this UUID field. No live owner role is created by this test setup.
 - `RACK_RELIC_TEST_SELLER_ONBOARDING_ENABLED=true` for seller acceptance.
 - `RACK_RELIC_TEST_ORDER_ISSUES_ENABLED=true` for buyer reports.
 - `RACK_RELIC_TEST_ISSUE_REVIEW_ENABLED=true` for the operator queue.
 - `RACK_RELIC_TEST_ISSUE_RESPONSES_ENABLED=true` for shared issue updates and seller responses; this also requires the buyer-report flag.
 - `RACK_RELIC_TEST_ISSUE_REFUND_REVIEW_ENABLED=true` for read-only refund readiness and staging an amount in the existing local refund-review flow. The report flag and configured refund-operator access are also required.
+- `RACK_RELIC_TEST_SELLER_PROTECTIONS_ENABLED=true` records a fresh provider-readiness projection when the seller checks their status, and exposes operator-only protection reviews/one-way seller holds. Seller onboarding must be enabled and the migration installed first. All ordinary/live transfer and payout controls remain disabled. The separate sandbox simulation has its own flag below.
+- `RACK_RELIC_TEST_DISPUTE_HOLDS_ENABLED=true` on the staging webhook receiver activates signed dispute/early-fraud holds after migration 7. Closed or won notices remain held for review. No automatic refund, debit or transfer reversal is issued. Preserve and reconcile unknown provider identities and response deadlines.
+- `RACK_RELIC_TEST_SELLER_COSTS_ENABLED=true` exposes the private seller cost review/consent rehearsal after migrations 9–10 and matching code installation. Only an explicitly configured synthetic server quote can prepare test ceilings; browser amounts are never authority. The full provider schedule stays incomplete and ordinary/live payouts stay held. Do not invent a live cost schedule to make a test pass.
+
+- `RACK_RELIC_TEST_SETTLEMENT_SIMULATION_ENABLED=true` enables only the explicit test-funds rehearsal after step 12. Seller protections, seller costs, tracking, Shippo test mode and the existing participating refund operator must also be configured. Read back the test seller’s v2 eligibility, manual payout schedule and default test bank first. Never copy live bank details into fixtures or enable a production route.
 
 The review queue also requires the existing explicit refund-operator allowlist and refund flags. Do not widen that allowlist or remove the runtime's two-member staging restriction just to make a test pass. The SQL restricts this synthetic operator queue to orders the operator participates in. It is not a production admin role. If a dependency is missing, keep that feature off and resolve its specific dependency.
 
@@ -38,11 +81,15 @@ The review queue also requires the existing explicit refund-operator allowlist a
 | Flow | Acceptance evidence |
 | --- | --- |
 | Seller setup | Authenticated synthetic seller; one bound test account; hosted Stripe return and incomplete verification; fresh provider status; simultaneous starts do not create two accounts. No transfers or payouts enabled. |
+| Fee and seller-cost consent | New $25 v2 order has a $1.75 buyer fee once, plus current test shipping/tax. Seller reviews and accepts the exact immutable disclosure before buyer dispatch. Buyer/foreign acceptance, wrong hash, changed quote and historical repricing fail. Unknown costs remain pending. |
 | Buyer report | Paid synthetic buyer order; report category saved; refresh preserves report; duplicate does not create a second record; changed category cannot overwrite original; unrelated member and seller cannot report as buyer. |
 | Operator queue | Ordinary member denied; configured participating operator sees report; one acknowledgment persists after refresh; retries retain first audit actor/time. |
 | Seller response | Buyer/seller can read only their own shared issue. Only the seller submits a structured response; identical retry preserves it; a different response cannot replace it. The operator queue shows the same response. Sign-out suppresses late responses. |
 | Issue refund review | No report: no readiness. Unacknowledged: acknowledge first. Pending/unknown/failed or conflicting refunds: no new preparation. Partial confirmed refund: remaining amount can be staged locally for review. Fully refunded: no new request. Existing saved references are preserved. No readiness/staging action sends a refund. |
+| Seller payout/recovery simulation | One saved transfer; retained full accepted cost ceiling; matching test bank; payout pending/paid/failed and independently verified return; parent allocation limits; exact reversal; refund-dispatch race holds; lost-ID lookup with no replacement POST. Unused seller reserve and all normal/live holds remain pending. |
 | Financial and fulfillment holds | Buyer report remains open; acknowledgment does not alter risk, jobs or ledger, issue a refund, generate postage, send email or transfer money. |
+| Private owner overview | Exact configured owner only; another participating refund operator denied; no financial writes on 30-second visible/focused polling; actual observation times, stale/missing feeds and session revocation behave correctly. Vercel control-plane health and backup acceptance stay unavailable until independently verified. |
+| Backup/recovery | Verify an actual Pro database restore plus separately retained private photo copies and matching photo references in an isolated drill. Reconcile complete Stripe history, including provider payments absent from a restored DB, under a durable recovery hold. [Recovery requirements](backup-recovery.md) remain pending until hosted evidence exists. |
 | Session privacy | Sign out during each in-flight read/write; late responses cannot restore private content or dispatch a follow-up request as the previous user. |
 | Environment isolation | The same feature actions return 404 on main/production; no test secret is published; preview remains protected. |
 
@@ -51,3 +98,7 @@ Use synthetic fixtures only. No test emails to real marketplace members. Record 
 ## Separate live launch work
 
 Business/bank/identity verification for Rack Relic, live Connect eligibility, seller settlement and payouts, guardian onboarding, operational returns/disputes, tax recording/reversal, real shipping, notifications and recovery acceptance remain separate. Reports and acknowledgments do not constitute a buyer-protection program. The 30-day policy needs trusted purchase-time evidence before automatic eligibility can be enforced. Keep customer promises aligned to implemented operations.
+
+Use [the complete launch acceptance matrix](payment-launch-acceptance.md) to keep
+local coverage, recorded legacy hosted results and current missing evidence
+separate. The stitched local payment journeys do not complete hosted acceptance.

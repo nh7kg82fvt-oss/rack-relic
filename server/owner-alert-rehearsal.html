@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rack Command — email alert setup check</title>
+<style>body{font:16px system-ui;max-width:48rem;margin:3rem auto;padding:1rem;line-height:1.5}label{display:block;margin:.7rem 0}input[type=text]{display:block;width:90%;padding:.5rem}button{padding:.7rem;margin:.4rem}#status{white-space:pre-wrap}</style>
+<h1>Email alert setup check</h1>
+<p><a id="command-link" href="/api/command-center#cases-heading">Return to Rack Command</a></p>
+<p>This page uses your existing Rack Command sign-in. It does not request another email link. It checks the original fictional owner-alert delivery; opening this page or signing in sends no alert.</p>
+<p>This manual check is not a running live alert service. The original test and its delivery records stay preserved. Real payments and seller payouts remain off.</p>
+<form id="review"><fieldset id="review-fields" disabled><legend>Owner: confirm the current observed setup before checking the original</legend>
+<label><input type="checkbox" required name="rack_team_and_domain_verified">Rack team and alerts domain verified in Resend</label>
+<label><input type="checkbox" required name="transactional_free_and_paid_extras_off">Transactional Free and paid extras off, inspected now</label>
+<label><input type="checkbox" required name="tracking_and_receiving_off">Tracking and receiving off</label>
+<label><input type="checkbox" required name="sending_key_domain_only">Sending key scoped only to alerts.rackrelic.com</label>
+<label><input type="checkbox" required name="exact_receiver_code_and_secrets_verified">Reviewed receiver source deployed; secret and enable flag verified without revealing values</label>
+<label><input type="checkbox" required name="receipt_rpc_grants_and_denials_verified">Receipt RPC installation and browser/direct-table denials tested</label>
+<label>Observed receiver revision <input type="text" id="revision" required pattern="v[1-9][0-9]{0,5}" placeholder="v4"></label>
+<label>Nonsecret review reference <input type="text" id="reference" required pattern="owner_review_[A-Za-z0-9_-]{8,80}" placeholder="owner_review_YYYYMMDD_setup"></label>
+</fieldset><button id="reconcile" type="submit" disabled>Check original signed delivery</button></form>
+<p id="status" role="status">Checking your existing Rack Command session. No email will be sent.</p>
+<script src="/owner-alert-command.js" defer></script></html>
