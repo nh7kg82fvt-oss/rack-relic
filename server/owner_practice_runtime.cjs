@@ -252,7 +252,7 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
   }else if(method==='GET'&&/^\/v2\/core\/accounts\/acct_[A-Za-z0-9]+$/.test(u.pathname)){
    if(u.pathname.slice('/v2/core/accounts/'.length)!==(s.originalAccount||s.provisionalAccount)||connected!==undefined)hold('provider_path_not_allowed');
   }else hold('provider_path_not_allowed');
-  const response=await wait(scope,()=>fetchImpl(url,{...init,signal:AbortSignal.any([s.signal,init.signal])}));
+  const response=await wait(scope,()=>fetchImpl(url,{...init,headers:{...init.headers,'Accept-Encoding':'identity'},signal:AbortSignal.any([s.signal,init.signal])}));
   await current(scope);let used=false;
   return Object.freeze({ok:response?.ok,status:response?.status,headers:response?.headers,
    async json(){
