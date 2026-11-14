@@ -164,6 +164,12 @@ test('expired unsent redirects are cleared before a held response; failed cleanu
  assert.equal((await f.request('POST','begin',{response:r})).statusCode,503);assert.deepEqual(f.sqlCalls,[]);assert.deepEqual(f.providerPosts,[]);
 });
 test('source API exposes no direct action, credentials or seller impersonation callback',async()=>{
- const f=fixture({phase:'known'}),r=await f.request('POST','observe');assert.equal(r.statusCode,200);assert(!r.body.includes(f.serverKey));assert(!r.body.includes(f.publishableKey));assert(!r.body.includes(f.restrictedKey));assert(!r.body.includes(SESSION));assert(!r.body.includes(OWNER));
- assert.equal(MODE,'owner-operated-fictional-rehearsal');assert.throws(()=>globalThis.fetch('https://example.invalid'),/Real network prohibited/);
+ const originalFetch=globalThis.fetch;let globalFetchCalls=0;
+ // Self-contained guard: exercise the injected fictional transport without
+ // depending on an external preload or ever calling the native network API.
+ globalThis.fetch=()=>{globalFetchCalls++;throw Error('Unexpected global fetch');};
+ try{
+  const f=fixture({phase:'known'}),r=await f.request('POST','observe');assert.equal(r.statusCode,200);assert(!r.body.includes(f.serverKey));assert(!r.body.includes(f.publishableKey));assert(!r.body.includes(f.restrictedKey));assert(!r.body.includes(SESSION));assert(!r.body.includes(OWNER));
+  assert.equal(MODE,'owner-operated-fictional-rehearsal');assert.equal(globalFetchCalls,0);assert(f.calls.length>0);
+ }finally{globalThis.fetch=originalFetch;}
 });
