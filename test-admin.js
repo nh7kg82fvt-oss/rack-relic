@@ -50,6 +50,7 @@
    }
   }
   if(value.reserve!==undefined)expected.reserve=reserveRead.validate(value.reserve,{environmentId,now});
+  if(value.ownerFixtureSetupAvailable!==undefined){if(typeof value.ownerFixtureSetupAvailable!=='boolean')throw Error('Invalid practice setup availability');expected.ownerFixtureSetupAvailable=value.ownerFixtureSetupAvailable;}
   return expected;
  }
  function adminAttention(value,{environmentId,now=Date.now()}={}){
@@ -84,9 +85,10 @@
  function mount({document,window,fetchImpl,storage,environments,sessionProvider=null,onSessionLost=()=>{},onSignOut=null,endpoint='/api/test-admin',workModule=window.RackRelicAdminWork,setTimer=window.setTimeout.bind(window),clearTimer=window.clearTimeout.bind(window),clock=Date.now}={}){
   if(!['/api/test-admin','/api/command-center'].includes(endpoint)||sessionProvider!==null&&typeof sessionProvider!=='function'||sessionProvider&&endpoint!=='/api/command-center')throw Error('Invalid owner session transport');
   const $=id=>document.getElementById(id),notice=text=>{$('notice').textContent=text;};
-  let config=null,key=null,timer=null,controller=null,generation=0,pending=false,focused=typeof document.hasFocus==='function'?document.hasFocus():true,destroyed=false,sessionRaw=null,workClient=null,workRoot=null,layoutReady=false;
+  let config=null,key=null,timer=null,controller=null,generation=0,pending=false,focused=typeof document.hasFocus==='function'?document.hasFocus():true,destroyed=false,sessionRaw=null,workClient=null,workRoot=null,layoutReady=false,fixtureLinkVersion=0;
   const visible=()=>!destroyed&&focused&&document.hidden!==true&&document.visibilityState!=='hidden';
-  function clearData(){workClient?.destroy();workClient=null;workRoot?.replaceChildren();workRoot=null;layoutReady=false;$('overview').hidden=true;for(const id of ['attention','counts','sources','orders','cases','reserve-read'])$(id)?.replaceChildren();$('overview').replaceChildren();$('as-of').textContent='';if($('page-title'))$('page-title').textContent='Sign in to Rack Command';}
+  function clearFixtureSetup(){fixtureLinkVersion++;const root=$('owner-fixture-setup');if(root){root.replaceChildren();root.hidden=true;}}
+  function clearData(){clearFixtureSetup();workClient?.destroy();workClient=null;workRoot?.replaceChildren();workRoot=null;layoutReady=false;$('overview').hidden=true;for(const id of ['attention','counts','sources','orders','cases','reserve-read'])$(id)?.replaceChildren();$('overview').replaceChildren();$('as-of').textContent='';if($('page-title'))$('page-title').textContent='Sign in to Rack Command';}
   function stop(){generation++;if(timer!==null){clearTimer(timer);timer=null;}if(controller){controller.abort();controller=null;}pending=false;$('refresh').disabled=true;clearData();}
   function readSession(){if(sessionProvider){const s=sessionProvider();return UUID.test(s?.member||'')&&UUID.test(s?.sessionRef||'')?{raw:s.member+':'+s.sessionRef,member:s.member,sessionRef:s.sessionRef}:null;}if(!key)return null;try{const raw=storage.getItem(key);if(typeof raw!=='string'||raw.length>16384)return null;const saved=JSON.parse(raw);if(typeof saved?.token!=='string'||!/^\S{1,8192}$/.test(saved.token)||!UUID.test(saved.member||''))return null;return {raw,token:saved.token,member:saved.member};}catch{return null;}}
   function signedOut(message,remove=false){stop();if(remove&&key&&!sessionProvider)try{storage.removeItem(key);}catch{}if(remove&&sessionProvider)onSessionLost();sessionRaw=null;$('logout').hidden=true;$('signin-link').hidden=false;notice(message||'Sign in above with your practice owner account to open your control center.');}
@@ -100,6 +102,14 @@
   const caseLabels={warning_received:'Fraud warning received',warning_needs_response:'Fraud warning needs a response',warning_under_review:'Fraud warning under review',warning_closed:'Fraud warning closed',needs_response:'Response needed',under_review:'Stripe is reviewing the dispute',appeal_needs_response:'Appeal needs a response',appeal_under_review:'Appeal under review',won:'Dispute outcome: won',lost:'Dispute outcome: lost',prevented:'Dispute reported as prevented',conflicting_evidence:'Records disagree — review needed'};
   function reference(label,value){const el=document.createElement('details'),summary=text('summary',label+' '+value.replace(/^case_/,'').slice(0,8));el.append(summary,text('p','Full reference: '+value));return el;}
   function recordLink(label,target){const a=text('a',label);a.href='#'+target;return a;}
+  function renderFixtureSetup(data,now){
+   clearFixtureSetup();
+   if(endpoint!=='/api/command-center'||typeof sessionProvider!=='function'||config.cookieSession!==true||config.environmentId!=='acceptance-v1'||data.ownerFixtureSetupAvailable!==true)return;
+   const root=$('owner-fixture-setup'),card=text('article',''),link=text('a','Review fictional seller setup');if(!root)return;
+   const version=generation,raw=sessionRaw,linkVersion=fixtureLinkVersion,observedAt=Date.parse(data.observedAt);card.className='card';link.href='/api/closed-practice-seller/begin';
+   link.addEventListener('click',event=>{const stamp=clock();if(linkVersion!==fixtureLinkVersion||!current(version,raw)||!Number.isSafeInteger(stamp)||stamp<now||stamp-observedAt>60000){event.preventDefault();clearFixtureSetup();}});
+   card.append(text('h2','Fictional seller rehearsal'),text('p','Owner-operated practice only. Payments stay closed. Seller setup has not been verified.'),link);root.append(card);root.hidden=false;
+  }
   function draftButton(record){
    if(config.workEnabled!==true||typeof workClient?.startFromRecord!=='function')return null;
    const version=generation,raw=sessionRaw,button=text('button','Draft follow-up');button.type='button';
@@ -116,6 +126,7 @@
    const reserve=section('Seller money owed and held');reserve.children[0].id='reserve-heading';const reserveRoot=el('div','reserve-read');reserve.append(reserveRoot);
    const counts=section('Orders at a glance');counts.children[0].id='counts-heading';counts.append(el('dl','counts'));
    const people=section('Customers and sellers');people.children[0].id='people-heading';people.append(el('p',null,'Live customer and seller profiles are not loaded into this practice view yet. Their details must come from Rack Relic\'s verified records; CCP contacts are kept separate.'));
+   if(endpoint==='/api/command-center'&&typeof sessionProvider==='function'&&config.cookieSession===true&&config.environmentId==='acceptance-v1'){const fixtureSetup=el('div','owner-fixture-setup');fixtureSetup.hidden=true;content.append(fixtureSetup);}
    const sources=section('Companies, connections and last updates');sources.children[0].id='sources-heading';sources.append(el('div','sources'));
    for(const [title,note,rows,headings]of [['Recent orders','order-note','orders',['Order','What is happening','Buyer total','Last update']],['Disputes and payment reviews','case-note','cases',['Case and order','What is happening','Response deadline','Last update']]]){
     const node=section(title),table=el('table'),thead=el('thead'),tr=el('tr'),wrap=el('div');node.children[0].id=rows+'-heading';wrap.className='table';for(const label of headings)tr.append(el('th',null,label));thead.append(tr);table.append(thead,el('tbody',rows));wrap.append(table);node.append(el('p',note),wrap);
@@ -145,12 +156,13 @@
    for(const c of data.cases){const row=document.createElement('tr');row.id='case-'+c.caseRef;const ref=text('td',''),status=text('td','');ref.append(reference('Case',c.caseRef),reference('Order',c.orderRef));if(data.orders.some(o=>o.orderRef===c.orderRef))ref.append(recordLink('View related order','order-'+c.orderRef));const draft=draftButton({kind:'case',ref:c.caseRef,orderRef:c.orderRef});if(draft)ref.append(draft);status.append(text('p',c.kind==='dispute'?'Bank dispute':'Early fraud warning'),text('p',caseLabels[c.status]),text('p',c.requiresResponse?'A response is needed. Seller money stays on hold.':'Seller money stays on hold.'));row.append(ref,status,text('td',c.dueBy===null?'No deadline recorded — check the case':format(c.dueBy)),text('td',format(c.observedAt)));$('cases').append(row);}
    $('order-note').textContent=data.hasMoreOrders?'Showing the latest 15 orders. More orders are not shown here.':data.orders.length?'Practice orders only.':'No practice orders yet. This does not show live sales.';
    $('case-note').textContent=data.hasMoreCases?'Showing up to 10 priority cases. More cases need checking before you rely on this list.':data.cases.length?'A closed case does not automatically release seller money.':'No practice cases recorded. Live disputes are not verified by this page.';
-   notice('Your practice control center is open. Real payments and seller payouts are off.');
+   renderFixtureSetup(data,now);notice('Your practice control center is open. Real payments and seller payouts are off.');
   }
   async function refresh(){
    if(!config||!visible()||pending)return;
    const session=readSession();if(!session){signedOut();return;}
    if(sessionRaw!==null&&sessionRaw!==session.raw)stop();sessionRaw=session.raw;
+   clearFixtureSetup();
    if(timer!==null){clearTimer(timer);timer=null;}pending=true;const version=generation,raw=session.raw;controller=new AbortController();const active=controller;$('refresh').disabled=true;$('logout').hidden=false;notice('Checking authorized test records…');
    try{const response=await fetchImpl(endpoint+'?action=overview',{method:'GET',cache:'no-store',redirect:'error',signal:AbortSignal.any([active.signal,AbortSignal.timeout(20000)]),credentials:'same-origin',headers:sessionProvider?{}:{Authorization:'Bearer '+session.token}});
     if(!current(version,raw))return;

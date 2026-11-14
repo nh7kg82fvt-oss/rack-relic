@@ -6,7 +6,7 @@ const {projectAdminOverview}=require('../test-admin.js');
 const adminWork=require('./admin_work_data.cjs');
 const reserveRead=require('../test-reserve-read.js');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now,commandSession=null}={}){
+function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now,commandSession=null,ownerFixtureSetupAvailable=null}={}){
  return async(req,res)=>{
   for(const [k,v]of Object.entries({'Cache-Control':'private, no-store, max-age=0','CDN-Cache-Control':'no-store','Vercel-CDN-Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'}))res.setHeader(k,v);
   const send=(status,body)=>{res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify(body));};
@@ -45,7 +45,8 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
    }
    const raw=await repository.adminOverview({authorization,ownerId});
    const reserve=reserveReadEnabled?await repository.adminReserveOverview({authorization,ownerId}):reserveRead.coverage('disabled',{now:clock(),environmentId:environment.id});
-   send(200,{...projectAdminOverview(raw,{environmentId:environment.id,revision:env.VERCEL_GIT_COMMIT_SHA,now:clock()}),reserve});
+   const practiceAvailable=commandSession&&environment.id==='acceptance-v1'&&typeof ownerFixtureSetupAvailable==='function'&&ownerFixtureSetupAvailable()===true;
+   send(200,{...projectAdminOverview(raw,{environmentId:environment.id,revision:env.VERCEL_GIT_COMMIT_SHA,now:clock()}),reserve,...(practiceAvailable?{ownerFixtureSetupAvailable:true}:{})});
   }catch(e){
    if(commandSession&&[401,403].includes(e.status)){send(e.status,{error:'Owner sign-in required'});return;}
    if(e instanceof adminWork.AdminWorkConflict){send(409,{error:e.reason==='version_conflict'?'This work item changed. Refresh before editing.':'The original save needs review. Check its request before trying again.',code:e.reason});return;}
