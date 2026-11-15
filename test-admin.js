@@ -189,8 +189,9 @@
    try{window.dispatchEvent(new window.CustomEvent('rr-command-denial',{detail:value}));}catch{}
   }
   $('refresh').addEventListener('click',()=>void refresh());$('logout').addEventListener('click',()=>{signedOut('Signed out. Private overview cleared.',!sessionProvider);notifyCommandSignOut();if(onSignOut)void onSignOut();});
-  const visibility=()=>{if(!visible()){stop();notice('Overview paused while this page is hidden.');}else void refresh();};
-  const blur=()=>{focused=false;stop();notice('Overview paused while this window is inactive.');},focus=()=>{focused=true;void refresh();};
+  function pause(message){stop();if(sessionRaw!==null&&$('page-title'))$('page-title').textContent='Rack Command paused';notice(message+' Private information is hidden. Return here to continue.');}
+  const visibility=()=>{if(!visible())pause('Overview paused while this page is hidden.');else void refresh();};
+  const blur=()=>{focused=false;pause('Overview paused while this window is inactive.');},focus=()=>{focused=true;void refresh();};
   const storageChange=e=>{if(e.key===key&&readSession()?.raw!==sessionRaw){stop();sessionRaw=null;void refresh();}};
   document.addEventListener('visibilitychange',visibility);window.addEventListener('blur',blur);window.addEventListener('focus',focus);window.addEventListener('storage',storageChange);
   void start();return {refresh,destroy(){destroyed=true;stop();document.removeEventListener?.('visibilitychange',visibility);window.removeEventListener?.('blur',blur);window.removeEventListener?.('focus',focus);window.removeEventListener?.('storage',storageChange);}};

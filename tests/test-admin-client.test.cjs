@@ -58,6 +58,28 @@ test('blur cancels polling and focus performs a fresh non-overlapping read',asyn
  const x=setup();await tick();x.events.blur();assert.equal(x.timers.size,0);assert.equal(x.get('overview').hidden,true);await x.client.refresh();assert.equal(x.overviewCalls().length,1);x.events.focus();await tick();assert.equal(x.overviewCalls().length,2);assert.equal(x.timers.size,1);x.client.destroy();
 });
 
+test('inactive signed-in Command shows paused copy while clearing records and rechecks before resuming',async()=>{
+ let finish;const pending=new Promise(r=>finish=r);
+ const x=setup({cookieMode:true,onOverview:async(n,valid)=>n===2?pending:Response.json(valid(),{headers:{'X-Rack-Command-Session':O}})});
+ await tick();assert.equal(x.get('page-title').textContent,'Rack Command');
+ assert.equal(x.get('logout').hidden,false);assert.equal(x.get('signin-link').hidden,true);
+ x.events.blur();
+ assert.equal(x.get('page-title').textContent,'Rack Command paused');
+ assert.match(x.get('notice').textContent,/window is inactive.*Private information is hidden.*Return here to continue/);
+ assert.equal(x.get('overview').hidden,true);assert.equal(x.get('overview').children.length,0);
+ assert.equal(x.get('orders').children.length,0);assert.equal(x.get('as-of').textContent,'');
+ assert.equal(x.get('logout').hidden,false);assert.equal(x.get('signin-link').hidden,true);assert.equal(x.timers.size,0);
+ assert.doesNotMatch(x.get('notice').textContent,new RegExp([OP,O,'test-operator-token','not-rendered@example'].join('|')));
+ x.events.focus();await tick();
+ assert.equal(x.overviewCalls().length,2);assert.equal(x.get('overview').hidden,true);assert.equal(x.get('page-title').textContent,'Rack Command paused');
+ finish(Response.json(x.valid(),{headers:{'X-Rack-Command-Session':O}}));await tick();
+ assert.equal(x.get('overview').hidden,false);assert.equal(x.get('page-title').textContent,'Rack Command');
+ x.document.hidden=true;x.document.visibilityState='hidden';x.docEvents.visibilitychange();
+ assert.equal(x.get('page-title').textContent,'Rack Command paused');assert.equal(x.get('overview').children.length,0);
+ assert.match(x.get('notice').textContent,/page is hidden.*Private information is hidden/);
+ x.get('logout').fire();assert.equal(x.get('page-title').textContent,'Sign in to Rack Command');assert.equal(x.get('overview').hidden,true);x.client.destroy();
+});
+
 test('a provider observation aging past five minutes in flight becomes stale without losing the authorized database snapshot',async()=>{
  let finish;const blocked=new Promise(r=>finish=r);const x=setup({onOverview:async(n,valid)=>n===2?blocked:Response.json(valid())});await tick();const work=x.client.refresh();await tick();const data=x.valid();data.sources.stripe.observedAt=new Date(Date.parse(data.observedAt)-299999).toISOString();data.sources.stripe.state='stored_evidence';x.advance(1000);finish(Response.json(data));await work;assert.equal(x.get('overview').hidden,false);assert.ok(x.get('sources').children.some(c=>c.children.some(p=>/more than five minutes/.test(p.textContent))));x.client.destroy();
 });
