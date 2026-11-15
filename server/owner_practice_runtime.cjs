@@ -110,9 +110,10 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
  const probe=configured?createCommandSessionService({env:commandEnv,fetchImpl:()=>hold('construction_io'),clock}):null;
  const ready=configured&&probe?.config?.owner===cfg.ownerId&&probe.config.projectUrl===ENV.projectUrl;
  function state(scope){const s=scopes.get(scope);if(!s||!s.open)hold('operation_closed');return s;}
+ function disconnected(s){return s.req.aborted===true||s.res.destroyed===true||s.res.writableEnded===true;}
  function check(scope){
   const s=state(scope),wall=clock(),mono=monotonicClock();
-  if(s.signal.aborted||!Number.isSafeInteger(wall)||!Number.isFinite(mono)||wall<s.lastWall||mono<s.lastMono||
+  if(s.signal.aborted||disconnected(s)||!Number.isSafeInteger(wall)||!Number.isFinite(mono)||wall<s.lastWall||mono<s.lastMono||
    wall<cfg.notBefore||wall>=cfg.notAfter||wall-s.startedAt>=s.duration||mono-s.monotonicStart>=s.duration||
    s.identity&&wall>=s.identity.expiresAt)hold('operation_expired');
   s.lastWall=wall;s.lastMono=mono;return wall;
@@ -135,6 +136,10 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
    sensitive:null,redirectAttempted:false,requestId:randomUUID(),rpcRequests:new Set()};
   scopes.set(scope,s);activeRequests.set(req,scope);
   s.timer=setTimeout(()=>controller.abort(),duration);
+  // IncomingMessage 'close'/destroyed also describes a normally consumed body.
+  // Only its aborted event, or closure of the response sink, cancels the scope.
+  s.disconnect=()=>controller.abort();
+  req.once?.('aborted',s.disconnect);res.once?.('close',s.disconnect);
   s.command=createCommandSessionService({env:commandEnv,clock,fetchImpl:async(url,init)=>{
    check(scope);
    if(!((url===ENV.projectUrl+'/auth/v1/user'&&init?.method==='GET')||
@@ -146,6 +151,7 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
  function closeScope(scope){
   const s=scopes.get(scope);if(!s)return;
   s.open=false;s.sensitive=null;if(s.createPermit)permits.delete(s.createPermit);
+  s.req.off?.('aborted',s.disconnect);s.res.off?.('close',s.disconnect);
   clearTimeout(s.timer);s.controller.abort();activeRequests.delete(s.req);scopes.delete(scope);
  }
  async function current(scope){
@@ -334,7 +340,7 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
    else await wait(scope,()=>formActions[op]({request:req,response:res,action:op}));
   }catch(error){
    const s=scope?scopes.get(scope):null;
-   if(!res.headersSent&&!res.writableEnded){
+   if(!res.headersSent){
     // A failed local pre-send check is not a delivered redirect. Remove its
     // sensitive header before any generic held response. If cleanup itself
     // fails, close the connection rather than risk sending that header.
@@ -343,6 +349,7 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
      try{res.removeHeader('Location');cleared=res.getHeader('Location')===undefined;}catch{}
      if(!cleared){try{res.destroy();}catch{}return;}
     }
+    if(req.aborted===true||res.destroyed===true||res.writableEnded)return;
     send(res,error instanceof OwnerFixtureHeld?error.status:503,{error:'Fictional seller setup is held. Review the original account; do not create a replacement.'});
    }
   }finally{if(scope)closeScope(scope);}
