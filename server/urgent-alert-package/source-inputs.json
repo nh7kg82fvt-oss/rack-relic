@@ -1,0 +1,55 @@
+{
+  "version": "urgent-alert-edge-source-pins-v2",
+  "files": [
+    {
+      "path": "source/baseline/stripe-test-events-v9.mjs",
+      "bytes": 15500,
+      "sha256": "ded34e58dc19ba824b69e697e9b92197f747ac38cd470c3250da05da83811981"
+    },
+    {
+      "path": "source/server/case_alert_repository.cjs",
+      "bytes": 3163,
+      "sha256": "0badeff6d871130b0abd8ea79ccfeb780e75f957deef776e20ab341cf98335d0"
+    },
+    {
+      "path": "source/server/case_alert_worker.cjs",
+      "bytes": 9342,
+      "sha256": "3f5fc7e3ff0660a0d70397b949f1d0e293935af596f07c5c09373e57d9895d59"
+    },
+    {
+      "path": "source/server/post-commit-risk-wake.cjs",
+      "bytes": 7866,
+      "sha256": "9b5879f506d3c2898ac7471d5283ce9344d0ae8183e666333c746dcc426e1bb6"
+    },
+    {
+      "path": "source/server/resend_case_alert_transport.cjs",
+      "bytes": 15372,
+      "sha256": "5019f64ad5b349974e3fbc0e0d4e0e7948e8f18106f57d1fce7d5fcd25f02cff"
+    },
+    {
+      "path": "source/server/resend_owner_alert_repository.cjs",
+      "bytes": 3858,
+      "sha256": "6336f5ccdf7f916bd7c5a74335be29c569dd74f793834df459bbae924ccf1b49"
+    },
+    {
+      "path": "source/server/test_environment_registry.cjs",
+      "bytes": 1794,
+      "sha256": "e30a50846f0720a8a9ee4badaaf77888152cb0843b681d4f2f2f95f28ba06387"
+    },
+    {
+      "path": "source/server/urgent_alert_edge_host.cjs",
+      "bytes": 7181,
+      "sha256": "cb5b053bb65fa877135337b3b69c5b0b48df7f17799efabf493bceb4174ed348"
+    },
+    {
+      "path": "source/server/urgent_alert_enrollment.cjs",
+      "bytes": 7816,
+      "sha256": "718cd57356497a9eb7e647eb978725a7bac2f4aac5117b73080cc2ce680a6eed"
+    },
+    {
+      "path": "source/server/urgent_alert_scope.cjs",
+      "bytes": 3984,
+      "sha256": "c84f2d5b6a412d171b2beca37391a8a9ef67acbcce7a7cee34382da058383f9d"
+    }
+  ]
+}
