@@ -5,6 +5,8 @@ const {createTestOrderRepository,OrderAccessDenied}=require('./test_order_reposi
 const {projectAdminOverview}=require('../test-admin.js');
 const adminWork=require('./admin_work_data.cjs');
 const reserveRead=require('../test-reserve-read.js');
+const commandQueue=require('./command_queue_repository.cjs');
+const {handleQueue}=require('./command_queue_runtime.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,clock=Date.now,commandSession=null,ownerFixtureSetupAvailable=null}={}){
  return async(req,res)=>{
@@ -14,13 +16,14 @@ function createTestAdminRuntime({env=process.env,fetchImpl=globalThis.fetch,cloc
   if(env.VERCEL_ENV!=='preview'||env.RACK_RELIC_TEST_ADMIN_OVERVIEW_ENABLED!=='true'||!environment||commandSession&&(!commandSession.config||environment.id!=='acceptance-v1')){send(404,{error:'Not found'});return;}
   let query;try{query=new URL(req.url,'https://example.invalid').searchParams;}catch{send(400,{error:'Invalid overview request'});return;}
   const action=query.get('action');
+  if(action==='queue'){await handleQueue({req,res,env,fetchImpl,clock,commandSession});return;}
   if(req.method!=='GET'&&!(req.method==='POST'&&action==='work')){res.setHeader('Allow',action==='work'&&environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_WORK_ENABLED==='true'?'GET, POST':'GET');send(405,{error:'Method not allowed'});return;}
   if([...query.keys()].some(k=>k!=='action'&&!(action==='work'&&req.method==='GET'&&['requestId','cursor'].includes(k)))||query.getAll('action').length>1||query.getAll('requestId').length>1||query.getAll('cursor').length>1||query.has('requestId')&&query.has('cursor')||action!==null&&!['config','access','overview','work'].includes(action)){send(400,{error:'Invalid overview request'});return;}
   const workEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_WORK_ENABLED==='true';
   const reserveReadEnabled=environment.id==='acceptance-v1'&&env.RACK_RELIC_TEST_ADMIN_RESERVE_READ_ENABLED==='true';
   if(action==='work'&&!workEnabled){send(404,{error:'Not found'});return;}
   if(action===null){res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");res.end(fs.readFileSync(path.join(__dirname,commandSession?'command-center.html':'test-admin.html'),'utf8'));return;}
-  if(action==='config'){send(200,{test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,workEnabled,reserveReadEnabled,reserveReadVersion:reserveRead.VERSION,...(commandSession?{cookieSession:true}:{})});return;}
+  if(action==='config'){send(200,{test:true,live:false,environmentId:environment.id,projectUrl:environment.projectUrl,returnUrl:environment.returnUrl,workEnabled,reserveReadEnabled,...(commandQueue.enabled(env,commandSession)?{queueAckEnabled:true}:{}),reserveReadVersion:reserveRead.VERSION,...(commandSession?{cookieSession:true}:{})});return;}
   const members=(env.RACK_RELIC_TEST_MEMBER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean),operators=(env.RACK_RELIC_TEST_REFUND_OPERATOR_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
   const ownerId=env.RACK_RELIC_TEST_ADMIN_OWNER_ID;
   if(!UUID.test(ownerId||'')||!members.includes(ownerId)||!operators.includes(ownerId)||members.length!==2||new Set(members).size!==2||!members.every(x=>UUID.test(x))||operators.length<1||operators.length>2||new Set(operators).size!==operators.length||!operators.every(x=>members.includes(x))||env.RACK_RELIC_TEST_REFUNDS_ENABLED!=='true'||env.RACK_RELIC_TEST_REFUND_REQUESTS_ENABLED!=='true'){send(503,{error:'Private overview is being prepared'});return;}
