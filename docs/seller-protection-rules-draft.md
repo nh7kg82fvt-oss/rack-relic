@@ -97,6 +97,12 @@ insurance must be selected and agreed with its quoted cost before purchase.
 Unknown costs or insufficient seller proceeds require a hold and review, not a
 hidden deduction from the buyer fee, shipping funds or collected tax.
 
+A seller cost reserve is money held for disclosed, accepted costs; it is not a
+final charge. After verified actual-cost reconciliation, any unused reserve
+remains owed to the seller and forms part of their remaining proceeds. It is
+not Rack Relic revenue or profit. Payment remains subject to the applicable
+delivery, issue, refund, dispute, accounting and recovery holds.
+
 No seller subscription or paid fraud upgrade is introduced by this draft. The
 buyer pays the approved $0.50 fixed component once per order, including bundles. Existing saved orders keep their original fee and
 cost snapshot; a new fee policy cannot retrospectively reprice a payment.
