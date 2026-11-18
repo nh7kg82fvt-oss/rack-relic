@@ -33,3 +33,48 @@ test('sunglasses navigation filters actual catalog data while preserving Accesso
  const draft=c.parse('/sell/new?category=sunglasses');assert.equal(draft.kind,'draft');assert.equal(draft.sunglasses,true);assert.equal(draft.title,'Create a sunglasses draft');assert.equal(c.parse('/sell/new').sunglasses,false);assert.equal(c.parse('/sell/edit/old-draft?category=sunglasses').sunglasses,undefined);
  const tracking=require('../tracking.js');assert.deepEqual(tracking.route('/category/sunglasses?q=private'),{path:'/category/sunglasses',name:'browse'});assert.equal(tracking.route('/sell/new?category=sunglasses'),null);
 });
+
+test('brand filter uses the stored brand, including on existing brand routes',()=>{
+ const c=setup(),sunglasses=c.parse('/category/sunglasses');c.setFilters({...sunglasses.filters,brand:'  rAy-BaN  '});
+ const item={search:'ray-ban inspired oval sunglasses',category:'Accessories',brand:'Ray-Ban',price_cents:2500,size:'One size',condition:'Good'};
+ assert.equal(c.catalogMatches(item,c.catalogFilters()),true);
+ assert.equal(c.catalogMatches({...item,brand:'Unbranded'},c.catalogFilters()),false,'A name in the title cannot become its stored brand');
+ assert.equal(c.catalogMatches({...item,brand:undefined},c.catalogFilters()),false);
+ c.setFilters({...sunglasses.filters,brand:'LV'});
+ assert.equal(c.catalogMatches({...item,brand:'Louis Vuitton'},c.catalogFilters()),true);
+ const gucci=c.parse('/brand/gucci');assert.equal(gucci.filters.brand,'Gucci');assert.equal(gucci.filters.q,'');
+ c.setFilters(gucci.filters);assert.equal(c.catalogMatches({...item,brand:'Gucci',search:'oval sunglasses'},c.catalogFilters()),true);
+ assert.equal(c.catalogMatches({...item,brand:'Other',search:'gucci inspired sunglasses'},c.catalogFilters()),false);
+});
+
+test('brand survives saved/shared searches while older links remain valid and invalid fields are rejected',()=>{
+ const c=setup();assert.equal(c.normalizeSearch({q:'sunglasses',category:'Accessories'}).brand,'');
+ const filters=c.normalizeSearch({q:'sunglasses',category:'Accessories',brand:'Ray-Ban',condition:'Good',max:'50'});
+ const saved=c.searchFromHash(c.searchHash(filters));assert.deepEqual(JSON.parse(JSON.stringify(saved)),JSON.parse(JSON.stringify(filters)));
+ const route=c.parse('/shop?'+new URLSearchParams(filters));assert.equal(route.kind,'catalog');c.setFilters(route.filters);assert.equal(c.currentSearch().brand,'Ray-Ban');
+ for(const brand of [12,'x'.repeat(61)])assert.throws(()=>c.normalizeSearch({brand}));
+ assert.equal(c.parse('/shop?brand=Gucci&brand=Nike').kind,'missing');
+ assert.throws(()=>c.searchFromHash('#search?v=1&brand=Gucci&brand=Nike'));
+ const tracking=require('../tracking.js');assert.deepEqual(tracking.route('/shop?brand=private-search'),{path:'/shop',name:'shop'});
+});
+
+test('description checklist preserves text, is repeat-safe and respects the draft size limit',()=>{
+ const {addChecklist,checklist}=require('../sunglasses-details.js');
+ const original='Small scratch on the left lens.\nCase is included.  ';
+ const added=addChecklist(original);assert.equal(added.changed,true);assert(added.value.startsWith(original+'\n\n'));assert(added.value.includes('replacement lenses:'));
+ assert.equal(addChecklist(added.value).changed,false);assert.equal(addChecklist(added.value).value,added.value);
+ const boundary='x'.repeat(2000-checklist.length-2);assert.equal(addChecklist(boundary).value.length,2000);
+ const tooLong=boundary+'x';assert.deepEqual(addChecklist(tooLong),{value:tooLong,changed:false,reason:'limit'});
+ assert.equal(addChecklist('Sunglasses details:\r\nAlready edited.').reason,'present');
+});
+
+test('checklist click changes only the editable description and reports unsaved input',()=>{
+ let click,reset,inputEvents=0,focused=0;
+ const description={value:'Existing seller notes.',form:{addEventListener(type,handler){assert.equal(type,'reset');reset=handler}},dispatchEvent(e){assert.equal(e.type,'input');assert.equal(e.bubbles,true);inputEvents++},focus(){focused++}},status={textContent:'Adds editable prompts; existing text is kept.'};
+ const button={addEventListener(type,handler){assert.equal(type,'click');click=handler}};
+ const nodes={'add-sunglasses-checklist':button,'listing-description':description,'sunglasses-checklist-status':status};
+ vm.runInNewContext(fs.readFileSync(__dirname+'/../sunglasses-details.js','utf8'),{window:{document:{getElementById:id=>nodes[id]}},Event:class{constructor(type,options){this.type=type;this.bubbles=options.bubbles}}});
+ assert.equal(description.value,'Existing seller notes.');click();assert(description.value.startsWith('Existing seller notes.\n\n'));assert.equal(inputEvents,1);assert.equal(focused,1);assert.match(status.textContent,/before saving/);
+ const once=description.value;click();assert.equal(description.value,once);assert.equal(inputEvents,1);assert.match(status.textContent,/already contains/);
+ reset();assert.equal(status.textContent,'Adds editable prompts; existing text is kept.');assert.equal(inputEvents,1);
+});
