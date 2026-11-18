@@ -129,7 +129,7 @@ BEGIN
    AND a.grantee<>p.proowner
  ) THEN RAISE EXCEPTION 'SCHEDULE_TICKET_OWNER_ONLY_ACL_HELD'; END IF;
  FOR role_name IN SELECT unnest(ARRAY['anon','authenticated','service_role']) LOOP
-  IF has_table_privilege(role_name,'rr_sandbox.backup_schedule_ticket_v1','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') THEN RAISE EXCEPTION 'SCHEDULE_TICKET_EFFECTIVE_PRIVILEGE_HELD'; END IF;
+  IF has_table_privilege(role_name,'rr_sandbox.backup_schedule_ticket_v1','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') THEN RAISE EXCEPTION 'SCHEDULE_TICKET_EFFECTIVE_PRIVILEGE_HELD'; END IF;
   FOREACH fn IN ARRAY ARRAY[
    'rr_sandbox.backup_schedule_ticket_no_reset_v1()'::regprocedure,
    'public.rr_test_backup_schedule_ticket_read_v1(uuid,text,bigint,bigint,text,text,text,text)'::regprocedure,

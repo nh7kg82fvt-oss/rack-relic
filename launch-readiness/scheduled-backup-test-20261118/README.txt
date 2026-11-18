@@ -17,7 +17,8 @@ provider credentials to run tests. No package script publishes or deploys code.
 The path-only dependency change was checked locally against the same existing
 0.5.13 package through standard Node module resolution, without downloading it.
 
-runtime/ and server/ preserve the accepted derivative's code bytes. The existing
+The provenance records the original accepted source hashes and the cloud follow-up
+changes to the ticket adapter and SQL. The existing
 fixed source account/project/bucket/namespace/role identity constants intentionally
 remain; they are public/non-secret scope fences, not operational grants. Do not
 replace them with broader/generic origins to make a test pass. Every provider
@@ -50,8 +51,14 @@ work may already have occurred if a downstream result is lost; further automatic
 Source execution remains held and the same original outcome must be reconciled.
 
 PGlite is local/queued, with explicit test-only clocks in positive SQL slot cases.
-It is not managed/nativePG17, independent-session contention, real provider wire,
-Cron timing/CPU/latency, automatic nonempty-photo or full restored-site acceptance.
+For unchanged-SQL native testing, run python3 tests/native-pg17.py with Python 3,
+Docker and the official image digest pinned in the harness already present locally.
+The harness uses a disposable network-disabled server, no published ports or host
+mounts, and its real minute-aligned wall clock (allow up to two minutes). It checks
+contention across separate backends, post-lock expiry, rollback and replay,
+immutability, privilege closure and installation search_path restoration.
+Hosted wire behavior, Cron timing/CPU/latency, automatic nonempty-photo backup and
+full restored-site acceptance require separate operational evidence.
 The real SQL/R2/photo/session/financial workflows are not called by these tests.
 No local browser, Mac-only helper or provider access is required in the cloud.
 

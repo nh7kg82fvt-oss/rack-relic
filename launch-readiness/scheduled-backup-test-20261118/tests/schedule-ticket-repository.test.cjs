@@ -55,10 +55,11 @@ test('CONSUME exact hash+nonce, winner claim and consumed responses never expose
 });
 test('wrong identities, hidden/accessor input, early/late/renewed slot and zero nonce never dispatch',async t=>{
  withClock(t);let calls=0;const repo=R.createScheduleTicketRepositoryV1({enabled:true,serviceKey:key,transport:async()=>{calls++;return response(data.record);}});
- for(const patch of [{extra:true},{deadline:slot+5001},{scheduledTime:slot+1},{scheduledTime:slot+60000,deadline:slot+65000},{scheduledTime:slot-60000,deadline:slot-55000},{rootSha256:'0'.repeat(64)},{cron:'* * * * *\n'},{ticketId:'../wrong'}])await assert.rejects(repo.read({...data.identity,...patch},{signal:signal()}),/HELD/);
+ for(const patch of [{extra:true},{deadline:slot+5001},{scheduledTime:slot+1},{scheduledTime:slot+60000,deadline:slot+65000},{scheduledTime:slot-60000,deadline:slot-55000},{rootSha256:'0'.repeat(64)},{cron:'* * * * *\n'},{ticketId:'../wrong'},{ticketId:[data.identity.ticketId]}])await assert.rejects(repo.read({...data.identity,...patch},{signal:signal()}),/HELD/);
  const hidden={...data.identity};Object.defineProperty(hidden,'hidden',{value:true});await assert.rejects(repo.read(hidden,{signal:signal()}),/HELD/);
  const accessor={...data.identity};Object.defineProperty(accessor,'cron',{get(){throw Error('must not execute');},enumerable:true});await assert.rejects(repo.read(accessor,{signal:signal()}),/HELD/);
- await assert.rejects(repo.consume({...data.identity,envelopeSha256:data.envelopeSha256,nonce:'0'.repeat(32)},{signal:signal()}),/HELD/);assert.equal(calls,0);
+ await assert.rejects(repo.consume({...data.identity,envelopeSha256:data.envelopeSha256,nonce:'0'.repeat(32)},{signal:signal()}),/HELD/);
+ await assert.rejects(repo.consume({...data.identity,envelopeSha256:data.envelopeSha256,nonce:[nonce]},{signal:signal()}),/HELD/);assert.equal(calls,0);
 });
 test('redirect/cache/wrong tuple/hash/noncanonical/duplicate/oversized/malformed response is HOLD, never retry',async t=>{
  withClock(t);const bad=[()=>new Response(null,{status:302,headers:{location:'https://example.invalid'}}),()=>new Response(JSON.stringify(data.record),{headers:{'content-type':'application/json',age:'1'}}),()=>response({...data.record,rootSha256:'8'.repeat(64)}),()=>response({...data.record,envelopeSha256:'8'.repeat(64)}),()=>response({...data.record,envelopeText:JSON.stringify(data.envelope,null,2)}),()=>new Response('{"version":1,"version":2}',{headers:{'content-type':'application/json'}}),()=>new Response('x'.repeat(524289),{headers:{'content-type':'application/json'}}),()=>new Response('{}',{headers:{'content-type':'text/plain'}}),()=>response({...data.record,credentials:'forbidden-extra'})];
@@ -86,7 +87,7 @@ test('SQL source actual-clock atomic install is empty/closed with exact RPC sign
  assert.equal((sql.match(/clock_timestamp\(\)/g)||[]).length,3);assert.equal(/\bCOMMIT\s*;/i.test(sql),false);assert.equal(/CREATE\s+SCHEMA|CREATE\s+EXTENSION|REFERENCES\s+rr_sandbox\./i.test(sql),false);
  const db=await dbFixture(t,{controlled:false});assert.equal((await db.query('SELECT count(*)::int n FROM rr_sandbox.backup_schedule_ticket_v1')).rows[0].n,0);
  for(const role of ['anon','authenticated','service_role']){
-  assert.equal((await db.query("SELECT has_table_privilege($1,'rr_sandbox.backup_schedule_ticket_v1','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') p",[role])).rows[0].p,false);
+  assert.equal((await db.query("SELECT has_table_privilege($1,'rr_sandbox.backup_schedule_ticket_v1','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN') p",[role])).rows[0].p,false);
   for(const name of ['rr_test_backup_schedule_ticket_read_v1(uuid,text,bigint,bigint,text,text,text,text)','rr_test_backup_schedule_ticket_consume_v1(uuid,text,bigint,bigint,text,text,text,text,text,text)'])assert.equal((await db.query('SELECT has_function_privilege($1,$2,\'EXECUTE\') p',[role,'public.'+name])).rows[0].p,false);
  }
  assert.equal((await db.query("SELECT count(*)::int n FROM pg_constraint WHERE conrelid='rr_sandbox.backup_schedule_ticket_v1'::regclass AND contype='f'")).rows[0].n,0);

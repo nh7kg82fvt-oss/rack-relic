@@ -137,16 +137,6 @@
       "path": "server/schedule-admission.cjs",
       "bytes": 9018,
       "sha256": "c606b10619758d5390ef295c902c115958c1301cb9b816cd9f2c50e59250b416"
-    },
-    {
-      "path": "server/schedule-ticket-repository.cjs",
-      "bytes": 9305,
-      "sha256": "cea604af62eb41bd3a5c15642fff3c839b30cdab05975c6ee1e2c3a910621378"
-    },
-    {
-      "path": "sql/schedule_ticket_v1.sql",
-      "bytes": 11674,
-      "sha256": "097aea882ec2c2a7f8109aba4c6d4b46105635cda44d88f4ddc7b357155021b5"
     }
   ],
   "testOnlyChanges": [
@@ -173,5 +163,32 @@
     "Mac compiler/tool paths",
     "local test/proof/TAP/manifest records"
   ],
-  "productionOrProviderPermission": false
+  "productionOrProviderPermission": false,
+  "cloudFollowup": {
+    "baseCommit": "d05531c5d3d1071cbd3d68aee371b8d6fa3032c2",
+    "originalAcceptancesForUpdatedFiles": [
+      {
+        "path": "server/schedule-ticket-repository.cjs",
+        "bytes": 9305,
+        "sha256": "cea604af62eb41bd3a5c15642fff3c839b30cdab05975c6ee1e2c3a910621378"
+      },
+      {
+        "path": "sql/schedule_ticket_v1.sql",
+        "bytes": 11674,
+        "sha256": "097aea882ec2c2a7f8109aba4c6d4b46105635cda44d88f4ddc7b357155021b5"
+      }
+    ],
+    "updatedFiles": [
+      {
+        "path": "server/schedule-ticket-repository.cjs",
+        "bytes": 9389,
+        "sha256": "39d660aa61ddb62bef9568f09c88f1baf5636f6bc3fa2210c0b1fdd83ce33de2"
+      },
+      {
+        "path": "sql/schedule_ticket_v1.sql",
+        "bytes": 11683,
+        "sha256": "bdf5eb7a5ce7ea0134d578dd4a662a5e906457d7233315246c55600b70334023"
+      }
+    ]
+  }
 }

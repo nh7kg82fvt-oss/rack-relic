@@ -37,7 +37,7 @@ function parse(text){
 function hash(x){return typeof x==='string'&&SHA.test(x)&&x!=='0'.repeat(64);}
 function identity(value){
  const x=plain(value);
- if(!exact(x,ID_KEYS)||!UUID.test(x.ticketId||'')||x.ticketId==='00000000-0000-0000-0000-000000000000'||typeof x.cron!=='string'||x.cron.length>64||!/^\S+(?: \S+){4}$/.test(x.cron)||!Number.isSafeInteger(x.scheduledTime)||x.scheduledTime<1||x.scheduledTime%60000!==0||!Number.isSafeInteger(x.deadline)||x.deadline!==x.scheduledTime+5000||ID_KEYS.filter(k=>k.endsWith('Sha256')).some(k=>!hash(x[k])))fail();
+ if(!exact(x,ID_KEYS)||typeof x.ticketId!=='string'||!UUID.test(x.ticketId)||x.ticketId==='00000000-0000-0000-0000-000000000000'||typeof x.cron!=='string'||x.cron.length>64||!/^\S+(?: \S+){4}$/.test(x.cron)||!Number.isSafeInteger(x.scheduledTime)||x.scheduledTime<1||x.scheduledTime%60000!==0||!Number.isSafeInteger(x.deadline)||x.deadline!==x.scheduledTime+5000||ID_KEYS.filter(k=>k.endsWith('Sha256')).some(k=>!hash(x[k])))fail();
  return x;
 }
 function envelopeText(text,x){
@@ -69,7 +69,7 @@ function createScheduleTicketRepositoryV1({enabled=false,serviceKey=null,transpo
  async function invoke(value,isConsume,signal){
   let controller,timer,abort;try{
    if(!ready||!(signal instanceof AbortSignal)||signal.aborted)fail();const v=plain(value),base=identity(Object.fromEntries(ID_KEYS.map(k=>[k,v[k]])));
-   if(!exact(v,isConsume?[...ID_KEYS,'envelopeSha256','nonce']:ID_KEYS)||isConsume&&(!hash(v.envelopeSha256)||!NONCE.test(v.nonce||'')||v.nonce==='0'.repeat(32)))fail();
+   if(!exact(v,isConsume?[...ID_KEYS,'envelopeSha256','nonce']:ID_KEYS)||isConsume&&(!hash(v.envelopeSha256)||typeof v.nonce!=='string'||!NONCE.test(v.nonce)||v.nonce==='0'.repeat(32)))fail();
    const now=Date.now();if(!Number.isSafeInteger(now)||now<base.scheduledTime||now>=base.deadline)fail();
    controller=new AbortController();abort=()=>controller.abort();signal.addEventListener('abort',abort,{once:true});if(signal.aborted)fail();
    const stopped=new Promise((_,reject)=>{controller.signal.addEventListener('abort',()=>reject(Error('SCHEDULE_TICKET_V1_HELD')),{once:true});});timer=setTimeout(abort,base.deadline-now);
@@ -77,7 +77,10 @@ function createScheduleTicketRepositoryV1({enabled=false,serviceKey=null,transpo
    const job=Promise.resolve().then(async()=>{
     if(controller.signal.aborted)fail();const r=await transport(url,{method:'POST',redirect:'manual',cache:'no-store',signal:controller.signal,headers:{apikey:serviceKey,'content-type':'application/json','cache-control':'no-store','accept-encoding':'identity'},body:JSON.stringify(a)});
     if(controller.signal.aborted||!(r instanceof Response)||r.status!==200||r.redirected||r.headers.has('location')||r.url&&r.url!==url||!/^application\/json(?:\s*;|$)/i.test(r.headers.get('content-type')||'')||r.headers.has('content-encoding')&&!/^identity$/i.test(r.headers.get('content-encoding'))||r.headers.has('age')&&r.headers.get('age')!=='0'||['cf-cache-status','x-vercel-cache'].some(k=>/^(HIT|STALE|UPDATING)$/i.test(r.headers.get(k)||'')))fail();
-    const p=await body(r,controller.signal),end=Date.now();if(controller.signal.aborted||!Number.isSafeInteger(end)||end<now||end>=base.deadline)fail();return isConsume?claim(p,v):record(p,base);
+    const p=await body(r,controller.signal),result=isConsume?claim(p,v):record(p,base);
+    const end=Date.now();
+    if(controller.signal.aborted||!Number.isSafeInteger(end)||end<now||end>=base.deadline)fail();
+    return result;
    });return await Promise.race([job,stopped]);
   }catch{fail();}finally{clearTimeout(timer);if(abort)signal.removeEventListener('abort',abort);controller?.abort();}
  }
