@@ -1,0 +1,177 @@
+{
+  "schema": "rr-portable-scheduled-single-test-source-v1",
+  "sourcePurpose": "Closed local/cloud source and synthetic tests only; no operational capability.",
+  "acceptedLocalSourceManifestSha256": "a404867aff38fcdd2f120dd8ebc54b9cb29a6f39f7d322900568abea53964347",
+  "byteIdenticalAcceptedRuntimeRepositorySqlFiles": [
+    {
+      "path": "runtime/server/backup_authenticated_collector_v5.cjs",
+      "bytes": 22148,
+      "sha256": "f605818dd1d2ed310ea58ddc071aeeb559696ac788379b2a4718487df60f6476"
+    },
+    {
+      "path": "runtime/server/backup_cf_dispatch_repository_v1.cjs",
+      "bytes": 7103,
+      "sha256": "7b63ba67b315b8e0ec05f56767b999f2f4d602803eee990e09abdec5d2bb22ac"
+    },
+    {
+      "path": "runtime/server/backup_cf_photo_snapshot_v1.cjs",
+      "bytes": 9608,
+      "sha256": "fe4431805fe6eda6c37c00c8db4db0c9031c2aa85df7ec17d3ca2360b0163c94"
+    },
+    {
+      "path": "runtime/server/backup_cf_root_lifecycle_v1.cjs",
+      "bytes": 5505,
+      "sha256": "3165a813dafa6baeb349295f11abaf0a34ffe784cfd00c8e53c32c625b06308c"
+    },
+    {
+      "path": "runtime/server/backup_cf_window_ports_v1.cjs",
+      "bytes": 26728,
+      "sha256": "b66375e5bff49ce22059feb8cb81c8d67d8910c1b3a7c58acc09582a7db2103f"
+    },
+    {
+      "path": "runtime/server/backup_cf_window_v1.cjs",
+      "bytes": 19726,
+      "sha256": "9c7001ed62c19ca349d17395776a565265970e4450eb969d1a468b38e6cb5947"
+    },
+    {
+      "path": "runtime/server/backup_facade_capability.cjs",
+      "bytes": 3989,
+      "sha256": "568e343e4574b8c5eb13f7dc1a08270c99c9c46614720f74075fc9bd93cd85a4"
+    },
+    {
+      "path": "runtime/server/backup_rls_source_photo_facade.cjs",
+      "bytes": 9438,
+      "sha256": "e0ede306e01c82997a2af0615f57b1bae9212c4a52179a2269d365493948b18d"
+    },
+    {
+      "path": "runtime/server/backup_runtime_enrollment_v4.cjs",
+      "bytes": 5385,
+      "sha256": "94f1adc14f36697a1845a143e593a87aba1a6732d5d6558dbeaa5f5e38ca7c2c"
+    },
+    {
+      "path": "runtime/server/backup_runtime_enrollment_v5.cjs",
+      "bytes": 5385,
+      "sha256": "94ab411ea9ec0d3fe4969d63e89e4e8734a53ab717ffbbc67a90f490fa140624"
+    },
+    {
+      "path": "runtime/server/backup_scheduled_test_profile_v1.cjs",
+      "bytes": 2320,
+      "sha256": "a262e64fae42bc2210ed54588b4f48929ce0701fd7f62f23f437e553c552b71d"
+    },
+    {
+      "path": "runtime/server/backup_scoped_execution_v5.cjs",
+      "bytes": 28248,
+      "sha256": "789efce38f57c60e6949278fedebae09d03b6985677e4035ad90d4544b2f6ae4"
+    },
+    {
+      "path": "runtime/server/backup_scoped_execution_v5_root_loader.cjs",
+      "bytes": 5357,
+      "sha256": "ea1d6d3794e6153f60b7cdda971e45ca2c13e136bdbffaa096c1bfa0c056e213"
+    },
+    {
+      "path": "runtime/server/cloudflare_effective_metadata_review_v5.cjs",
+      "bytes": 23546,
+      "sha256": "52c32d85bf340132ecaa3934924e8617e54ff9ab442cfc28357281777820e285"
+    },
+    {
+      "path": "runtime/server/cloudflare_rpc_data_transfer_v1.cjs",
+      "bytes": 4377,
+      "sha256": "cde323c21fd4a395d9dae37f0c7713466773d019a14b623a9cdc79cd0e9e5fe6"
+    },
+    {
+      "path": "runtime/server/cloudflare_window_lifecycle_proposal_v1.cjs",
+      "bytes": 6070,
+      "sha256": "0d2458db16d2dd4bba191345253ebb0186ddc69921a0740dce996d28f8164abf"
+    },
+    {
+      "path": "runtime/server/fixed_source_attestation_v1.cjs",
+      "bytes": 20882,
+      "sha256": "65067a96b73f14db89994c4884b2d7beb394d5e197cfbe8b148b09cb4961ee0e"
+    },
+    {
+      "path": "runtime/server/r2_archive_config_verifier.cjs",
+      "bytes": 8136,
+      "sha256": "728b76d45569f1cb35a397612ca25e13bbeb10acc5948ea29aae80f4aa50c8f6"
+    },
+    {
+      "path": "runtime/server/r2_archive_configuration_observation_v2.cjs",
+      "bytes": 8869,
+      "sha256": "969a01e9df38e1c56746988f58b7b7eeb166e402fd22dc7d8bac4c93fec81e46"
+    },
+    {
+      "path": "runtime/server/rls_source_session_credentials.cjs",
+      "bytes": 4270,
+      "sha256": "97df6f863dca481f7f45b1a1bcfee3e10b6f916425970beff38c2f292473aba0"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/caller.mjs",
+      "bytes": 342,
+      "sha256": "395e4b768e3aa23624b1518a9b1fe96873ff3510397e276376e3330adb48cded"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/gateway.mjs",
+      "bytes": 690,
+      "sha256": "b64377f992f09a1ee07029b5bd77ef5907542d1d8f7c4ef5c87697299b0b6cf6"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/journal.mjs",
+      "bytes": 763,
+      "sha256": "c0c446a1b2ef3332410f6a913c8a7802717c879df74a6a0aa492b11d6a5dcb83"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/private-runtime.cjs",
+      "bytes": 15060,
+      "sha256": "0da0c0ea5aa46d20e9320c07da6b3efd08af3582ebc683aaf93a2e55175ac3de"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/source.mjs",
+      "bytes": 540,
+      "sha256": "f4409ffda6f8d39463dd4f227be9c401192492197991c0b063cadad8ef6b8307"
+    },
+    {
+      "path": "runtime/workers/backup-cf-v1/verifier.mjs",
+      "bytes": 357,
+      "sha256": "bfdbefb7409fc585066abc238466d31ff0ae739c083904de00ecb67d2cb52134"
+    },
+    {
+      "path": "server/schedule-admission.cjs",
+      "bytes": 9018,
+      "sha256": "c606b10619758d5390ef295c902c115958c1301cb9b816cd9f2c50e59250b416"
+    },
+    {
+      "path": "server/schedule-ticket-repository.cjs",
+      "bytes": 9305,
+      "sha256": "cea604af62eb41bd3a5c15642fff3c839b30cdab05975c6ee1e2c3a910621378"
+    },
+    {
+      "path": "sql/schedule_ticket_v1.sql",
+      "bytes": 11674,
+      "sha256": "097aea882ec2c2a7f8109aba4c6d4b46105635cda44d88f4ddc7b357155021b5"
+    }
+  ],
+  "testOnlyChanges": [
+    {
+      "path": "tests/schedule-ticket-repository.test.cjs",
+      "change": "Mac-only absolute PGlite import becomes bare package import; exact0.5.13 devDependency."
+    },
+    {
+      "path": "tests/helpers/authenticated-collector-v5-fixture.cjs",
+      "change": "Saved provider readback/module files replaced by newly fictional in-memory metadata/module bodies; same strict schemas/collector checks."
+    },
+    {
+      "path": "tests/helpers/synthetic-provider-fixture.cjs",
+      "change": "New synthetic deployment/version IDs/module content and recomputed hashes. Fixed existing scope constants remain unchanged."
+    }
+  ],
+  "excluded": [
+    "operational provider-readback JSON",
+    "saved deployed module payloads",
+    "owner identity/email and selector UUIDs",
+    "operational profiles/enrollments/tickets",
+    "real credential values",
+    "generated fixture bundles",
+    "Mac compiler/tool paths",
+    "local test/proof/TAP/manifest records"
+  ],
+  "productionOrProviderPermission": false
+}
