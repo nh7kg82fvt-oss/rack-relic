@@ -14,6 +14,8 @@ function createShippoTestClient({token, fetchImpl=globalThis.fetch}={}) {
       });
     } catch { throw Error('Shippo test request failed; no automatic retry was made'); }
     if (!response.ok) throw Error('Shippo test request rejected ('+response.status+')');
+    const age=response.headers?.get('age');
+    if(age!==undefined&&age!==null&&(!/^\d+$/.test(age)||Number(age)>0)||['x-vercel-cache','cf-cache-status'].some(k=>['HIT','STALE','UPDATING'].includes((response.headers?.get(k)||'').toUpperCase())))throw Error('Cached shipping response rejected');
     let data; try { data=await response.json(); } catch { throw Error('Invalid Shippo response'); }
     if (data.test !== true) throw Error('Expected a test-mode response');
     return data;
@@ -47,6 +49,7 @@ function createShippoTestClient({token, fetchImpl=globalThis.fetch}={}) {
     async quote({from,to,package:pack}={}) {
       const data=await request('/shipments/',{address_from:address(from),address_to:address(to),parcels:[parcel(pack)],async:false,metadata:'Rack Relic test only'});
       if(!ID.test(data.object_id)||!Array.isArray(data.rates)) throw Error('Invalid test shipment');
+      if(data.rates.length>100||data.rates.some(r=>!r||r.test===false))throw Error('Invalid test rates');
       const rates=data.rates.filter(r=>ID.test(r.object_id)&&r.currency==='USD'&&/^\d+(\.\d{1,2})?$/.test(r.amount)).map(r=>{
         const cents=Math.round(Number(r.amount)*100);
         if(!Number.isSafeInteger(cents)||cents<0) throw Error('Invalid shipping price');

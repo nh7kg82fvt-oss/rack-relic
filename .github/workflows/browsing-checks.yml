@@ -15,5 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check browsing, account, photo and privacy behavior
-        run: node --test tests/account-gallery-flow.test.cjs tests/account-session.test.cjs tests/gallery-navigation.test.cjs tests/photo-delivery.test.cjs tests/safety-help.test.cjs tests/tracking-runtime.test.cjs tests/tracking.test.cjs tests/browsing-release.test.cjs
+      - name: Install pinned test dependencies
+        run: npm ci
+      - name: Check browsing, payments, seller security and private order workflows
+        run: npm test
