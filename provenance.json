@@ -1,0 +1,153 @@
+{
+  "frozenManifestSha256": "1f0d2d3608bd8777318e0e1cf92fbe8439416cba4e13a8033702ec81bbedbae3",
+  "frozenFiles": 17,
+  "frozenContentBytes": 114120,
+  "sourceModeAndBytesPreserved": true,
+  "mappings": [
+    {
+      "source": "README.txt",
+      "destination": "frozen/README.txt",
+      "bytes": 9416,
+      "sha256": "22100a4f6535cd64de70b8d4764e6435860287c974bbe1fce0fb0dd38a65ad5f",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/api/recovery-readonly.js",
+      "destination": "frozen/package/api/recovery-readonly.js",
+      "bytes": 341,
+      "sha256": "81b12dca5d5295d815b45052f56c1c040602fa43728273c9d59e1611f434ec87",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-bootstrap.js",
+      "destination": "frozen/package/public/recovery-bootstrap.js",
+      "bytes": 3871,
+      "sha256": "82c986a02162e17ce10316c830844b9fc8a83acc9da0d6f600cbc1cc82ca3c0d",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-coordinator.js",
+      "destination": "frozen/package/public/recovery-coordinator.js",
+      "bytes": 7513,
+      "sha256": "60ef799acfcb4c92c137d338959cdd13f25608a2224208c437e87eda60ed19f0",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-readonly-view.css",
+      "destination": "frozen/package/public/recovery-readonly-view.css",
+      "bytes": 2626,
+      "sha256": "af1b9eca9e56894fbe847a0fa634dc5745ca598177dd65ad3a2dbcf7e3bfa143",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-readonly-view.html",
+      "destination": "frozen/package/public/recovery-readonly-view.html",
+      "bytes": 3640,
+      "sha256": "1e69b75221bf81d011b87387f5f9fd920d4b0a13708bd0fc2acfccc199b7d90d",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-readonly-view.js",
+      "destination": "frozen/package/public/recovery-readonly-view.js",
+      "bytes": 11746,
+      "sha256": "bbff2d0e28ed574da70809b24c7892be27d9a5f12ecac92286bead8ff0dd017e",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-session-provider.js",
+      "destination": "frozen/package/public/recovery-session-provider.js",
+      "bytes": 13112,
+      "sha256": "a32e214fc20e240f1c5e0103208d38fcc6243fd0c7fbd97e406720153b080691",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/public/recovery-snapshot.js",
+      "destination": "frozen/package/public/recovery-snapshot.js",
+      "bytes": 3718,
+      "sha256": "45f4bce07a17a322df0a76e955466991034ec700c2aa9b8aad396e2d94808117",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/server/recovery_host.cjs",
+      "destination": "frozen/package/server/recovery_host.cjs",
+      "bytes": 8543,
+      "sha256": "24deafcd098fe50e1ddcb4995e467c5abbaff3134328fb5673430cfee8211400",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/server/recovery_owner_session_reader.cjs",
+      "destination": "frozen/package/server/recovery_owner_session_reader.cjs",
+      "bytes": 7276,
+      "sha256": "bc5743209e530ab46bf64d8895ee93d20956d040c8ae0a53039c1a47999768c0",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/server/recovery_private_binding.cjs",
+      "destination": "frozen/package/server/recovery_private_binding.cjs",
+      "bytes": 339,
+      "sha256": "248e80fefeafff0a3a55767fe6a7813b91f5eddb7d2d15192da111219a8c1d62",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/server/recovery_readonly_adapter.cjs",
+      "destination": "frozen/package/server/recovery_readonly_adapter.cjs",
+      "bytes": 9438,
+      "sha256": "15c220cf13b3a5fc0844185c667cf51dbf5584980a25f90adb1757151c070197",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/vendor/pinned_admin_snapshot.cjs",
+      "destination": "frozen/package/vendor/pinned_admin_snapshot.cjs",
+      "bytes": 3618,
+      "sha256": "90bb76ee6dd541f9492e5ca9002fe827da4c84584b09538175342d8c5328605e",
+      "mode": "0o644"
+    },
+    {
+      "source": "package/vercel.json",
+      "destination": "frozen/package/vercel.json",
+      "bytes": 166,
+      "sha256": "72226d8ec3d24fc3ed02319d1f8bc60c85516776bf9b4ea05eb22a554d37e143",
+      "mode": "0o644"
+    },
+    {
+      "source": "tests/recovery-coordinator-composition.test.cjs",
+      "destination": "frozen/tests/recovery-coordinator-composition.test.cjs",
+      "bytes": 12972,
+      "sha256": "d2fadbedd12948ed6652d093e3b38df3cc8545caa059f16de17f49d05f950a25",
+      "mode": "0o644"
+    },
+    {
+      "source": "tests/recovery-host-package.test.cjs",
+      "destination": "frozen/tests/recovery-host-package.test.cjs",
+      "bytes": 15785,
+      "sha256": "48f5ca53d91b48286ab7bbfc017ba0f4d8829369b0b17c9ad4297136f526f995",
+      "mode": "0o644"
+    }
+  ],
+  "publicOverrides": [
+    {
+      "source": "package/public/recovery-session-provider.js",
+      "destination": "public/recovery-session-provider.js",
+      "bytes": 13764,
+      "sha256": "b01425a780bdd4bbce7466ed05671106214edb8e57480746beb1b1b8511abeae",
+      "originalSha256": "a32e214fc20e240f1c5e0103208d38fcc6243fd0c7fbd97e406720153b080691",
+      "scope": "Reviewed browser Auth CORS/cache/decoded-body compatibility only; original server unchanged"
+    },
+    {
+      "source": "package/public/recovery-readonly-view.js",
+      "destination": "public/recovery-readonly-view.js",
+      "bytes": 11595,
+      "sha256": "f986c31bb7da6cc6853cf1bf0a83a5ef2d123d5511bba6e2a3df338c044d6e53",
+      "originalSha256": "bbff2d0e28ed574da70809b24c7892be27d9a5f12ecac92286bead8ff0dd017e",
+      "scope": "Reviewed browser-decoded data-body compatibility only; mandatory same-origin Date/no-store and server unchanged"
+    }
+  ],
+  "index": {
+    "source": "package/public/recovery-readonly-view.html",
+    "sourceSha256": "1e69b75221bf81d011b87387f5f9fd920d4b0a13708bd0fc2acfccc199b7d90d",
+    "sha256": "bdab0f948c76880bddab975df277a1a3633f0af6c73b875b85c7ef0fa7ce2ec9",
+    "bytes": 3695,
+    "onlyInsertion": " <script src=\"/api/recovery-bootstrap\" defer></script>\n",
+    "additionalSameOriginBootstrapRequests": 1
+  }
+}

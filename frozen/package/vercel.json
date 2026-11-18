@@ -1,0 +1,8 @@
+{
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": "public",
+  "functions": {
+    "api/recovery-readonly.js": { "supportsCancellation": true }
+  }
+}

@@ -1,4 +1,9 @@
-node_modules/
 .env
 .env.*
-!.env.example
+private-review/
+review/
+logs/
+*.log
+test-result.json
+source-manifest.json
+scripts/

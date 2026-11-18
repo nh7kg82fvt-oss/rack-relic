@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <meta name="referrer" content="no-referrer">
+ <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://xkxolhgafjadpknsfqqw.supabase.co; base-uri 'none'; form-action 'none'">
+ <title>Rack Relic — Recovery check</title>
+ <link rel="stylesheet" href="recovery-readonly-view.css">
+ <script src="recovery-snapshot.js" defer></script>
+ <script src="recovery-readonly-view.js" defer></script>
+ <script src="recovery-bootstrap.js" defer></script>
+ <script src="recovery-session-provider.js" defer></script>
+ <script src="recovery-coordinator.js" defer></script>
+</head>
+<body>
+ <header><div class="brand"><span aria-hidden="true">RR</span><strong>Rack Relic</strong></div><span class="badge">Private recovery drill</span></header>
+ <main>
+  <p class="eyebrow">CHECKING YOUR SAVED RECORDS</p>
+  <h1>Recovery check</h1>
+  <p class="intro">A read-only look at the separate restored copy of Rack. Your main Rack Command login stays separate.</p>
+  <aside class="notice"><strong>Stored records only</strong><p>Provider connections and live readiness are unverified. This check has no payment, shipment, task-editing or provider actions.</p></aside>
+  <section class="card" aria-labelledby="open-heading">
+   <h2 id="open-heading">Open the recovered view</h2>
+   <p>This check is closed until its separate recovered account and connection are reviewed. When enabled, your existing recovery password goes directly to that recovered account; it is never sent to Rack Command.</p>
+   <label for="recovery-password">Existing recovered-account password</label>
+   <input id="recovery-password" type="password" autocomplete="current-password" disabled>
+   <div class="actions"><button id="recovery-signin" type="button" disabled>Open recovered records</button><button id="recovery-finish" type="button" class="secondary" disabled>Finish and check cleanup</button></div>
+   <p id="recovery-cleanup-status" role="status" aria-live="polite">Recovery sign-in and connection are not configured. This check is closed.</p>
+   <div class="actions"><button id="open-records" type="button" hidden disabled>Open recovered records</button><button id="clear-records" type="button" class="secondary" hidden>Clear this view</button></div>
+   <p id="status" role="status" aria-live="polite" hidden>Recovery sign-in and connection are not configured. This check is closed.</p>
+  </section>
+  <section id="records" class="card" hidden aria-labelledby="records-heading">
+   <h2 id="records-heading">Stored recovery records</h2>
+   <p>Read observed at <time id="observed-at"></time>. This is a database observation, not a live provider update.</p>
+   <dl class="counts"><div><dt>Saved orders</dt><dd id="stored-orders"></dd></div><div><dt>Recorded as paid</dt><dd id="stored-paid"></dd></div><div><dt>Orders held</dt><dd id="stored-held"></dd></div><div><dt>Saved sellers</dt><dd id="stored-sellers"></dd></div><div><dt>Cases needing attention</dt><dd id="stored-open-cases"></dd></div><div><dt>Recorded alert gaps</dt><dd id="stored-delivery-gaps"></dd></div></dl>
+   <h3>Orders in this view</h3><ul id="orders"></ul>
+   <h3>Cases in this view</h3><ul id="cases"></ul>
+   <p id="record-limit" class="muted"></p>
+  </section>
+  <p class="footnote">Leaving or hiding this page clears its private display and requests cleanup of this recovered session. Cleanup may remain unconfirmed; this does not change your main Rack Command login.</p>
+ </main>
+</body>
+</html>
