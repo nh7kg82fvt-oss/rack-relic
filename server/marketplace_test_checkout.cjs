@@ -29,12 +29,12 @@ function buildTestOrderBase({orderId,buyerId,listing,shippingQuote,feePolicyVers
   if(shippingQuote?.listingId!==listing.id||shippingQuote?.listingUpdatedAt!==listing.updated_at||typeof listing.updated_at!=='string'||!Number.isFinite(Date.parse(listing.updated_at)))throw Error('Shipping quote does not match the listing version');
   const shippingCents=quote(shippingQuote,orderId,now);cents(shippingCents,100000);
   // Missing tags occur only on legacy saved quotes. Current reservations carry
-  // their immutable v2 policy; never reprice an existing v1 order on retry.
+  // their immutable policy; never reprice an existing v1 or v2 order on retry.
   const buyerFeeCents=buyerFee(itemCents,feePolicyVersion);
   const taxableTotalCents=itemCents+buyerFeeCents+shippingCents;
   return Object.freeze({test:true,orderId,listingId:listing.id,sellerId:listing.seller_id,
     currency:'USD',itemCents,buyerFeeCents,shippingCents,baseCents:taxableTotalCents,
-    ...(feePolicyVersion===CURRENT_FEE_POLICY?{feePolicyVersion}:{})});
+    ...(feePolicyVersion!==LEGACY_FEE_POLICY?{feePolicyVersion}:{})});
 }
 function buildTestCheckout(input,now=Date.now()){
   const base=buildTestOrderBase(input,now),{taxQuote}=input;

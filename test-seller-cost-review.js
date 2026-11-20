@@ -33,13 +33,13 @@
  const cents=v=>Number.isSafeInteger(v)&&v>=0&&v<=30000000;
  const invalid=()=>{throw Error('Payment cost review unavailable. Seller funds remain held.');};
  function publicSellerCostReview(v,orderId){
-  if(!UUID.test(orderId||'')||!v||v.test!==true||v.orderId!==orderId||!['rr-fees-v1','rr-fees-v2'].includes(v.feePolicyVersion)
+  if(!UUID.test(orderId||'')||!v||v.test!==true||v.orderId!==orderId||!['rr-fees-v1','rr-fees-v2','rr-fees-v3'].includes(v.feePolicyVersion)
    ||!['held','reconciled_for_review'].includes(v.state)||v.releaseEnabled!==false||typeof v.accepted!=='boolean'
    ||!Array.isArray(v.blockers)||v.blockers.length>Object.keys(BLOCKERS).length||new Set(v.blockers).size!==v.blockers.length
    ||v.blockers.some(k=>!Object.hasOwn(BLOCKERS,k))||v.state!==(v.blockers.length?'held':'reconciled_for_review')
    ||!cents(v.confirmedCostCents)||!cents(v.reservedCostCents))return invalid();
   const unavailable=v.blockers.includes('unsupported_fee_policy')||v.blockers.includes('invalid_order_snapshot');
-  if(v.feePolicyVersion!=='rr-fees-v2'&&!v.blockers.includes('unsupported_fee_policy'))return invalid();
+  if(!['rr-fees-v2','rr-fees-v3'].includes(v.feePolicyVersion)&&!v.blockers.includes('unsupported_fee_policy'))return invalid();
   if(unavailable){if(v.disclosure!==null||v.accepted||v.sellerNetCents!==null||v.sellerNetAfterReserveCents!==null)return invalid();
    if(v.itemCents!==null&&(!cents(v.itemCents)||v.itemCents<1)||v.buyerFeeCents!==null&&!cents(v.buyerFeeCents))return invalid();
   }else if(!cents(v.itemCents)||v.itemCents<1||v.itemCents>10000000||!cents(v.buyerFeeCents)||v.buyerFeeCents!==Math.floor((v.itemCents*5+50)/100)+50)return invalid();

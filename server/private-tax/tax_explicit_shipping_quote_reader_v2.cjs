@@ -1,4 +1,5 @@
 'use strict';
+const {isSellerFeePolicy,buyerFee}=require('../fee_policy.cjs');
 // ADDITIVE SOURCE V2. Omitted/null shipping_rate only under captured explicit input.
 // No observed API-version/header acceptance; no runtime import, POST or default authority.
 const {createHash}=require('node:crypto');
@@ -19,7 +20,7 @@ function freeze(x){if(x&&typeof x==='object'){Object.values(x).forEach(freeze);O
 function context(raw,input){const c=plain(raw);exact(c,['version','requestId','orderId','buyerId','accountId','quoteId','attemptId','policyRevision','requestBodySha256','creationResponseSha256','calculationId','expected','capturedAt','quoteExpiresAt','savedTaxCents','savedTotalCents']);
  if(c.version!=='rr-test-tax-saved-quote-context-v1'||c.requestId!==input.requestId||c.orderId!==input.orderId||c.accountId!==ACCOUNT||!CALC.test(c.calculationId||''))hold();for(const k of ['buyerId','quoteId','attemptId'])if(!UUID.test(c[k]||''))hold();for(const k of ['policyRevision','requestBodySha256','creationResponseSha256'])sha(c[k]);
  const start=Date.parse(c.capturedAt),end=Date.parse(c.quoteExpiresAt);if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>600000)hold();
- const e=exact(c.expected,['feePolicyVersion','listingId','listingUpdatedAt','listingVersion','destinationHash','shippingRateId','item','buyerFee','shipping']);if(e.feePolicyVersion!=='rr-fees-v2'||!UUID.test(e.listingId||'')||!Number.isSafeInteger(e.listingVersion)||e.listingVersion<1||!Number.isFinite(Date.parse(e.listingUpdatedAt))||!/^[a-f0-9]{32}$/.test(e.shippingRateId||''))hold();sha(e.destinationHash);
+ const e=exact(c.expected,['feePolicyVersion','listingId','listingUpdatedAt','listingVersion','destinationHash','shippingRateId','item','buyerFee','shipping']);if(!isSellerFeePolicy(e.feePolicyVersion)||!UUID.test(e.listingId||'')||!Number.isSafeInteger(e.listingVersion)||e.listingVersion<1||!Number.isFinite(Date.parse(e.listingUpdatedAt))||!/^[a-f0-9]{32}$/.test(e.shippingRateId||''))hold();sha(e.destinationHash);
  for(const k of ['item','buyerFee','shipping']){const v=exact(e[k],k==='shipping'?['amountCents','taxCode']:['reference','amountCents','taxCode']);cents(v.amountCents);if(!/^txcd_[0-9]{8}$/.test(v.taxCode||'')||k!=='shipping'&&v.reference!==c.orderId+(k==='item'?'_item':'_buyer_fee'))hold();}
  if(e.item.amountCents<100||e.buyerFee.amountCents!==Math.floor((e.item.amountCents*5+50)/100)+50)hold();cents(c.savedTaxCents);cents(c.savedTotalCents);if(c.savedTotalCents<1||c.savedTotalCents!==e.item.amountCents+e.buyerFee.amountCents+e.shipping.amountCents+c.savedTaxCents)hold();return c;
 }

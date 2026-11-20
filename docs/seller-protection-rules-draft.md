@@ -1,5 +1,11 @@
 # Proposed Rack Relic seller payment rules
 
+Current owner decision, November 19, 2026: NEW orders use **5% of item subtotal plus $1.00 once per order**, with shipping and applicable tax separate. A $25 item has a $2.25 buyer platform fee. New source policy is `rr-fees-v3`; historical `rr-fees-v2` remains 5% plus $0.50 and `rr-fees-v1` remains 4%. Saved orders, quotes, receipts, refunds and unknown outcomes retain their original versions and amounts. The $200 COMPLETE order cap and one-unsettled-order limit remain required. Live checkout and financial release stay CLOSED. Matching closed database compatibility and hosted acceptance remain separate requirements; changing copy or code does not perform either.
+
+The earlier design and test evidence below is historical where it describes v2 as current or uninstalled. It is preserved rather than relabelled as new v3 acceptance.
+
+---
+
 **Draft for owner and legal review. Not published, accepted by sellers, or an
 active buyer/seller protection program.** Final wording must match provider
 approval and working order, return and recovery flows before activation.

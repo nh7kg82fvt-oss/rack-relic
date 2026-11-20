@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createHmac}=require('node:crypto');
-const {LEGACY_FEE_POLICY:V1,CURRENT_FEE_POLICY:V2,feePolicy,buyerFee}=require('../server/fee_policy.cjs');
+const {LEGACY_FEE_POLICY:V1,PREVIOUS_FEE_POLICY:V2,feePolicy,buyerFee}=require('../server/fee_policy.cjs');
 const {buildTestOrderBase,buildTestCheckout,createStripeTestCheckoutClient,verifyStripeTestEvent,stripeTestEventRpc}=require('../server/marketplace_test_checkout.cjs');
 const {createTestQuoteService,createTestCheckoutService}=require('../server/test_checkout_service.cjs');
 const {createStripeTestTaxClient,destinationHash}=require('../server/stripe_test_tax.cjs');
@@ -24,13 +24,13 @@ function taxClient(total){
  }})};
 }
 
-test('current policy is 5% plus fifty cents per order while legacy evidence remains 4%',()=>{
+test('saved v2 policy remains 5% plus fifty cents per order while v1 evidence remains 4%',()=>{
  assert.equal(V1,'rr-fees-v1');assert.equal(V2,'rr-fees-v2');
  assert.deepEqual(feePolicy(V2),{version:V2,percent:5,fixedCents:50});assert.deepEqual(feePolicy(V1),{version:V1,percent:4,fixedCents:0});assert.deepEqual(feePolicy(),feePolicy(V1));assert.ok(Object.isFrozen(feePolicy(V2)));
  for(const [price,legacy,current] of [[100,4,55],[101,4,55],[109,4,55],[110,4,56],[112,4,56],[113,5,56],[2500,100,175],[10000000,400000,500050]]){
   assert.equal(buyerFee(price,V1),legacy);assert.equal(buyerFee(price,V2),current);assert.equal(buyerFee(price),legacy);
  }
- for(const bad of [null,'','rr-fees-v3',4,5,{},false])assert.throws(()=>feePolicy(bad),/Unknown saved fee policy/);
+ for(const bad of [null,'','rr-fees-v4',4,5,{},false])assert.throws(()=>feePolicy(bad),/Unknown saved fee policy/);
  for(const price of [null,99,10000001,100.5,NaN,Infinity,'2500'])assert.throws(()=>buyerFee(price,V2),/Invalid item price/);
 });
 
@@ -45,7 +45,7 @@ test('versioned checkout snapshots calculate fee on item alone and retain legacy
  assert.deepEqual(missing,legacy);assert.equal(Object.hasOwn(legacy,'feePolicyVersion'),false);assert.equal(legacy.buyerFeeCents,100);assert.equal(legacy.baseCents,3100);assert.equal(legacy.totalCents,3427);
  assert.equal(current.feePolicyVersion,V2);assert.equal(current.buyerFeeCents,175);assert.equal(current.baseCents,3175);assert.equal(current.totalCents,3502);assert.ok(Object.isFrozen(current));
  const higherShipping=input(V2);higherShipping.shippingQuote.amountCents=700;higherShipping.taxQuote.baseCents=3375;assert.equal(buildTestCheckout(higherShipping,NOW).buyerFeeCents,175);
- for(const version of [null,'rr-fees-v3',2])assert.throws(()=>buildTestOrderBase(input(version),NOW),/Unknown saved fee policy/);
+ for(const version of [null,'rr-fees-v4',2])assert.throws(()=>buildTestOrderBase(input(version),NOW),/Unknown saved fee policy/);
  for(const [version,wrongBase] of [[V2,3100],[V1,3175],[undefined,3175]]){
   const i=input(version);i.taxQuote.baseCents=wrongBase;assert.throws(()=>buildTestCheckout(i,NOW),/Tax quote does not match/);
  }
@@ -74,7 +74,7 @@ test('retrieval accepts historical 4% and tagged 5% plus fixed-fee snapshots wit
 test('saved version, fee and total mismatches fail before a reconciliation request',async()=>{
  let calls=0;const client=createStripeTestCheckoutClient({secretKey:'rk_test_fixture',fetchImpl:async()=>{calls++;return Response.json(session());}});
  const legacy=buildTestCheckout(input(),NOW),current=buildTestCheckout(input(V2),NOW);
- for(const bad of [{...legacy,feePolicyVersion:null},{...legacy,feePolicyVersion:'rr-fees-v3'},{...legacy,feePolicyVersion:V2},{...current,feePolicyVersion:V1},{...current,feePolicyVersion:undefined},{...current,buyerFeeCents:176,totalCents:3503},{...current,buyerFeeCents:125,baseCents:3125,totalCents:3452}])await assert.rejects(client.retrieveCheckout({sessionId:'cs_test_feePolicy',snapshot:bad}));
+ for(const bad of [{...legacy,feePolicyVersion:null},{...legacy,feePolicyVersion:'rr-fees-v4'},{...legacy,feePolicyVersion:V2},{...current,feePolicyVersion:V1},{...current,feePolicyVersion:undefined},{...current,buyerFeeCents:176,totalCents:3503},{...current,buyerFeeCents:125,baseCents:3125,totalCents:3452}])await assert.rejects(client.retrieveCheckout({sessionId:'cs_test_feePolicy',snapshot:bad}));
  assert.equal(calls,0);
 });
 
@@ -88,14 +88,14 @@ test('quote service and Stripe Tax use the reservation policy in item, fee, tax 
 });
 
 test('explicit null and unknown reservation policies cannot obtain a quote',async()=>{
- for(const version of [null,'rr-fees-v3',2]){
+ for(const version of [null,'rr-fees-v4',2]){
   let taxCalls=0;const quotes=createTestQuoteService({clock:()=>NOW,loadFulfillment:async()=>fulfillment(),shipping:{quote:async()=>({test:true,rates:[{test:true,currency:'USD',id:'b'.repeat(32),amountCents:500}]})},tax:{quote:async()=>{taxCalls++;return input().taxQuote;}}});
   await assert.rejects(quotes.quote({order:order(version),to}),/Unknown saved fee policy/);assert.equal(taxCalls,0);
  }
 });
 
 test('checkout rejects a quote policy different from its reservation before preparation or Stripe dispatch',async()=>{
- for(const [reserved,quoted] of [[V2,undefined],[V2,V1],[V1,V2],[undefined,V2],[V2,null],[V2,'rr-fees-v3'],[null,undefined]]){
+ for(const [reserved,quoted] of [[V2,undefined],[V2,V1],[V1,V2],[undefined,V2],[V2,null],[V2,'rr-fees-v4'],[null,undefined]]){
   let writes=0;const service=createTestCheckoutService({clock:()=>NOW,repository:{reserve:async()=>order(reserved),checkoutAttempt:async()=>({order:order(reserved),attempt:null}),prepareCheckout:async()=>{writes++;throw Error('must not prepare');},dispatchCheckout:async()=>{writes++;throw Error('must not dispatch');}},quotes:{quote:async()=>input(quoted)},stripe:{createCheckout:async()=>{writes++;throw Error('must not create');},retrieveCheckout:async()=>{writes++;throw Error('must not retrieve');}}});
   await assert.rejects(service.start({authorization:'Bearer fixture',orderId:O,listingId:L,to}),/fee policy|Unknown saved fee policy/);assert.equal(writes,0);
  }

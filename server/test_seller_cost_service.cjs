@@ -1,6 +1,6 @@
 'use strict';
 const {createSellerCostDisclosure,assessSellerCostAllocation}=require('./seller_cost_allocation.cjs');
-const {CURRENT_FEE_POLICY}=require('./fee_policy.cjs');
+const {isSellerFeePolicy}=require('./fee_policy.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // This adapter prepares a test disclosure from a trusted server quote. Browser
 // amounts, provider payloads and assertions of consent are never authority.
@@ -40,7 +40,7 @@ function createTestSellerCostService({repository,loadCostQuote,clock=Date.now,co
   async status(input){return review(await get(input));},
   async prepare(input){
    const c=await get(input);
-   if(c.feePolicyVersion!==CURRENT_FEE_POLICY)throw Error('Current fee policy required');
+   if(!isSellerFeePolicy(c.feePolicyVersion))throw Error('Current fee policy required');
    if(c.disclosure)return review(c);
    if(typeof loadCostQuote!=='function')throw Error('Verified cost quote required');
    const now=clock(),q=await loadCostQuote(c.order);

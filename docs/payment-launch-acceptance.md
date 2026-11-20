@@ -1,5 +1,11 @@
 # Payment launch acceptance and evidence
 
+Current owner decision, November 19, 2026: NEW orders use **5% of item subtotal plus $1.00 once per order**, with shipping and applicable tax separate. A $25 item has a $2.25 buyer platform fee. New source policy is `rr-fees-v3`; historical `rr-fees-v2` remains 5% plus $0.50 and `rr-fees-v1` remains 4%. Saved orders, quotes, receipts, refunds and unknown outcomes retain their original versions and amounts. The $200 COMPLETE order cap and one-unsettled-order limit remain required. Live checkout and financial release stay CLOSED. Matching closed database compatibility and hosted acceptance remain separate requirements; changing copy or code does not perform either.
+
+The earlier design and test evidence below is historical where it describes v2 as current or uninstalled. It is preserved rather than relabelled as new v3 acceptance.
+
+---
+
 Prepared November 2, 2026 (Pacific). Baseline: draft PR #27, baseline remote commit
 `0701b186e27af0a6c92dc1c354c6e66dcc2f1303`, tested source tree
 `5d77c55af0fffe12c600c68e62bb65ab953c37b1`. This is an acceptance plan and

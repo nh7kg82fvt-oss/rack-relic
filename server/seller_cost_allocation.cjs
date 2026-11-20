@@ -1,7 +1,7 @@
 'use strict';
 const {createHash}=require('node:crypto');
-const {CURRENT_FEE_POLICY,buyerFee}=require('./fee_policy.cjs');
-const POLICY_VERSION='rr-seller-costs-v1',FEE_POLICY_VERSION=CURRENT_FEE_POLICY;
+const {PREVIOUS_FEE_POLICY,isSellerFeePolicy,buyerFee}=require('./fee_policy.cjs');
+const POLICY_VERSION='rr-seller-costs-v1',FEE_POLICY_VERSION=PREVIOUS_FEE_POLICY; // Preserve the historical exported fixture version.
 const KINDS=Object.freeze(['processing','radar','connect_active_account','payout','insurance']);
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const REFERENCE=/^[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z0-9_.-]+)*$/;
@@ -10,7 +10,7 @@ const time=(v,now)=>Number.isSafeInteger(v)&&v>=1000000000000&&v<=now+30000;
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function validOrder(o){
  return object(o)&&o.test===true&&UUID.test(o.orderId||'')&&UUID.test(o.sellerId||'')&&o.currency==='USD'
-  &&o.feePolicyVersion===FEE_POLICY_VERSION&&cents(o.itemCents,10000000)&&o.itemCents>=100
+  &&isSellerFeePolicy(o.feePolicyVersion)&&cents(o.itemCents,10000000)&&o.itemCents>=100
   &&[o.buyerFeeCents,o.shippingCents,o.taxCents,o.totalCents].every(v=>cents(v))
   &&o.buyerFeeCents===buyerFee(o.itemCents,o.feePolicyVersion)
   &&o.totalCents===o.itemCents+o.buyerFeeCents+o.shippingCents+o.taxCents
@@ -27,7 +27,7 @@ function canonicalDisclosure({order,maxTotalCents,costCaps,selectedInsurance,cre
  if(!validOrder(order)||!cents(maxTotalCents,order.itemCents)||!object(costCaps)||typeof selectedInsurance!=='boolean'
   ||Object.keys(costCaps).length!==KINDS.length||KINDS.some(k=>!Object.hasOwn(costCaps,k)||!cents(costCaps[k],order.itemCents))
   ||(!selectedInsurance&&costCaps.insurance!==0)||!Number.isSafeInteger(createdAt)||createdAt<1000000000000)throw Error('Invalid seller cost disclosure');
- return {test:true,policyVersion:POLICY_VERSION,feePolicyVersion:FEE_POLICY_VERSION,orderId:order.orderId,sellerId:order.sellerId,
+ return {test:true,policyVersion:POLICY_VERSION,feePolicyVersion:order.feePolicyVersion,orderId:order.orderId,sellerId:order.sellerId,
   currency:'USD',itemCents:order.itemCents,buyerFeeCents:order.buyerFeeCents,shippingCents:order.shippingCents,
   taxCents:order.taxCents,totalCents:order.totalCents,settlementPeriod:order.settlementPeriod,payoutBatchId:order.payoutBatchId,
   maxTotalCents,costCaps:Object.fromEntries(KINDS.map(k=>[k,costCaps[k]])),selectedInsurance,createdAt};
@@ -46,14 +46,14 @@ function assessSellerCostAllocation({order,disclosure,acceptance,costs,expectedC
  const blockers=new Set(),plan=[];let confirmed=0,reserved=0,unknown=false;
  const block=code=>blockers.add(code);
  const finish=()=>Object.freeze({test:true,orderId:UUID.test(order?.orderId||'')?order.orderId:null,
-  policyVersion:POLICY_VERSION,feePolicyVersion:FEE_POLICY_VERSION,state:blockers.size?'held':'reconciled_for_review',
+  policyVersion:POLICY_VERSION,feePolicyVersion:isSellerFeePolicy(order?.feePolicyVersion)?order.feePolicyVersion:FEE_POLICY_VERSION,state:blockers.size?'held':'reconciled_for_review',
   blockers:Object.freeze([...blockers]),buyerTotalCents:validOrder(order)?order.totalCents:null,
   platformFeeCents:validOrder(order)?order.buyerFeeCents:null,buyerShippingCents:validOrder(order)?order.shippingCents:null,
   buyerTaxCents:validOrder(order)?order.taxCents:null,confirmedCostCents:confirmed,reservedCostCents:reserved,
   encumberedCostCents:confirmed+reserved,sellerNetCents:validOrder(order)&&!unknown&&reserved===0?Math.max(0,order.itemCents-confirmed):null,
   sellerNetAfterReserveCents:validOrder(order)&&!unknown?Math.max(0,order.itemCents-confirmed-reserved):null,
   allocationPlan:Object.freeze(plan.map(p=>Object.freeze({...p}))),releaseEnabled:false,transferCreated:false,payoutCreated:false});
- if(!validOrder(order)){block(order?.feePolicyVersion!==FEE_POLICY_VERSION?'unsupported_fee_policy':'invalid_order_snapshot');unknown=true;return finish();}
+ if(!validOrder(order)){block(!isSellerFeePolicy(order?.feePolicyVersion)?'unsupported_fee_policy':'invalid_order_snapshot');unknown=true;return finish();}
  let expectedDisclosure;
  try{expectedDisclosure=createSellerCostDisclosure({order,maxTotalCents:disclosure?.maxTotalCents,costCaps:disclosure?.costCaps,selectedInsurance:disclosure?.selectedInsurance,createdAt:disclosure?.createdAt});}
  catch{block('cost_disclosure_required');unknown=true;return finish();}
@@ -61,7 +61,7 @@ function assessSellerCostAllocation({order,disclosure,acceptance,costs,expectedC
  if(!time(d.createdAt,now)||disclosure?.hash!==d.hash||Object.keys(d).some(k=>k!=='costCaps'&&disclosure[k]!==d[k]))block('cost_disclosure_mismatch');
  if(acceptance?.test!==true||acceptance.source!=='server_verified_session'||acceptance.authenticated!==true
   ||acceptance.orderId!==order.orderId||acceptance.sellerId!==order.sellerId||acceptance.policyVersion!==POLICY_VERSION
-  ||acceptance.feePolicyVersion!==FEE_POLICY_VERSION||acceptance.disclosureHash!==d.hash||!time(acceptance.authenticatedAt,now)
+  ||acceptance.feePolicyVersion!==order.feePolicyVersion||acceptance.disclosureHash!==d.hash||!time(acceptance.authenticatedAt,now)
   ||acceptance.authenticatedAt<d.createdAt||order.paidAt!==undefined&&(!time(order.paidAt,now)||acceptance.authenticatedAt>order.paidAt))block('seller_cost_acceptance_required');
  const keys=sellerCostObligationKeys(order,{selectedInsurance:d.selectedInsurance}),required=Object.values(keys);
  if(expectedCostKeys!==undefined&&(!Array.isArray(expectedCostKeys)||new Set(expectedCostKeys).size!==expectedCostKeys.length
