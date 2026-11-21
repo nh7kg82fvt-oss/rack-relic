@@ -82,6 +82,7 @@ function createOwnerStripeWireCheck({env=null,fetchImpl=null,clock=Date.now,mono
    await current();
    if(req.method==='GET'){
     check();res.statusCode=200;res.setHeader('Content-Type','text/html; charset=utf-8');check();
+    res.setHeader('Referrer-Policy','same-origin');
     res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stripe test connection | Rack Relic</title><main><h1>Check the Stripe test connection</h1><p>This performs up to five read-only requests in the private test account. It creates no seller, payment, refund or transfer. Payments remain closed.</p><p>This does not verify seller-creation permissions or launch readiness. There are no automatic retries. A repeated form submission can perform another read; the limit is per request, not a durable cross-restart claim.</p><form method="post" action="'+PATH+'"><button name="action" value="wire-check" type="submit">Run one read-only check</button></form><p><a href="/api/command-center">Return to Rack Command</a></p></main></html>');return;
    }
    await form(req,scope);await current();
