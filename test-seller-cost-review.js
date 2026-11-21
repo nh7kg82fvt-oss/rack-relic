@@ -42,7 +42,7 @@
   if(!['rr-fees-v2','rr-fees-v3'].includes(v.feePolicyVersion)&&!v.blockers.includes('unsupported_fee_policy'))return invalid();
   if(unavailable){if(v.disclosure!==null||v.accepted||v.sellerNetCents!==null||v.sellerNetAfterReserveCents!==null)return invalid();
    if(v.itemCents!==null&&(!cents(v.itemCents)||v.itemCents<1)||v.buyerFeeCents!==null&&!cents(v.buyerFeeCents))return invalid();
-  }else if(!cents(v.itemCents)||v.itemCents<1||v.itemCents>10000000||!cents(v.buyerFeeCents)||v.buyerFeeCents!==Math.floor((v.itemCents*5+50)/100)+50)return invalid();
+  }else if(!cents(v.itemCents)||v.itemCents<1||v.itemCents>10000000||!cents(v.buyerFeeCents)||v.buyerFeeCents!==Math.floor((v.itemCents*5+50)/100)+(v.feePolicyVersion==='rr-fees-v3'?100:50))return invalid();
   if(v.sellerNetCents!==null&&(!cents(v.sellerNetCents)||v.reservedCostCents!==0||v.sellerNetCents!==Math.max(0,v.itemCents-v.confirmedCostCents)))return invalid();
   if(v.sellerNetAfterReserveCents!==null&&(!cents(v.sellerNetAfterReserveCents)||v.sellerNetAfterReserveCents!==Math.max(0,v.itemCents-v.confirmedCostCents-v.reservedCostCents)))return invalid();
   if(v.sellerNetCents!==null&&v.sellerNetAfterReserveCents!==v.sellerNetCents)return invalid();
