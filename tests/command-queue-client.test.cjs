@@ -1,0 +1,38 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {mount}=require('../command-queue-client.js');
+const {VERSION}=require('../command-queue-data.js');
+const O='11111111-1111-4111-8111-111111111111',S='22222222-2222-4222-8222-222222222222',R='33333333-3333-4333-8333-333333333333',C='case_'+'c'.repeat(32);
+const tick=()=>new Promise(r=>setImmediate(r));
+function node(tag){return {tag,textContent:'',children:[],events:{},append(...v){this.children.push(...v);},replaceChildren(){this.children=[];},addEventListener(k,fn){this.events[k]=fn;},setAttribute(){}};}
+const all=n=>[n,...n.children.flatMap(all)],text=n=>all(n).map(n=>n.textContent).join(' ');
+function setup({hook,store=new Map(),blocked=false}={}){
+ let active=true,now=Date.now(),lost=0;const root=node('div'),timers=new Map(),calls=[];
+ const storage={getItem:k=>store.get(k)??null,setItem:(k,v)=>{if(blocked)throw Error();store.set(k,v);},removeItem:k=>store.delete(k)};
+ const document={createElement:node};const window={crypto,setTimeout:(f,n)=>{const id=crypto.randomUUID();timers.set(id,f);return id;},clearTimeout:id=>timers.delete(id)};
+ function record(kind){return kind==='cases'?{caseRef:C,orderRef:R,kind:'dispute',status:'needs_response',requiresResponse:true,dueBy:new Date(now+86400000).toISOString(),observedAt:new Date(now).toISOString(),holdRequired:true,generation:2,evidenceVersion:'e'.repeat(64),acknowledgement:null}:{orderRef:R,state:'paid',riskStatus:'review',refundState:'refunded',totalCents:19999,observedAt:new Date(now).toISOString(),holdRequired:true};}
+ function ack(cmd){return {ownerId:O,caseRef:C,orderRef:R,generation:2,evidenceVersion:'e'.repeat(64),firstRequestId:cmd.requestId,acknowledgedAt:new Date(now).toISOString()};}
+ function response(url,o,change={}){
+  const q=new URL(url,'https://example.invalid').searchParams,op=q.get('op'),kind=q.get('kind');let result;
+  if(op==='list')result={kind,filter:q.get('filter'),revision:'a'.repeat(64),items:[record(kind)],hasMore:false,nextCursor:null};
+  else if(op==='lookup')result={kind,ref:q.get('ref'),item:record(kind)};
+  else if(op==='ack'){const c=JSON.parse(o.body);result={requestId:c.requestId,acknowledgement:ack(c),isCurrent:true};}
+  else result={requestId:q.get('requestId'),acknowledgement:null,isCurrent:false};
+  const v={version:VERSION,test:true,live:false,releaseEnabled:false,environmentId:'acceptance-v1',ownerId:O,sessionRef:S,nonce:q.get('nonce'),observedAt:now,operation:op,result,...change};
+  return new Response(JSON.stringify(v),{headers:{'content-type':'application/json','cache-control':'private, no-store','X-Rack-Command-Session':S}});
+ }
+ const fetchImpl=async(url,o)=>{calls.push({url,o});return hook?await hook({url,o,response,record,ack,advance:n=>now+=n}):response(url,o);};
+ const client=mount({root,document,window,fetchImpl,storage,session:()=>active?{member:O,sessionRef:S}:null,clock:()=>now,onAccessLost:()=>{active=false;lost++;}});
+ return {client,root,store,calls,timers,record,advance:n=>now+=n,deactivate(){active=false;},get lost(){return lost;}};
+}
+test('exact related-order lookup is independent of loaded records; full refunded paid order stays held',async()=>{const x=setup();await tick();await x.client.lookup('cases',C);const b=all(x.root).find(n=>n.textContent==='View related order');assert.ok(b);await b.events.click();await tick();assert.match(text(x.root),/199.99/);assert.match(text(x.root),/paid.*refunded/);assert.match(text(x.root),/Seller money remains held/);assert.match(x.calls.at(-1).url,new RegExp(R));x.client.destroy();});
+test('positive acknowledgement states limited semantics and preserves explicit holds',async()=>{const x=setup();await tick();await x.client.lookup('cases',C);await x.client.acknowledge();assert.equal(x.calls.filter(c=>c.o.method==='POST').length,1);assert.match(text(x.root),/Holds and deadlines are unchanged/);assert.equal(x.store.size,0);x.client.destroy();});
+test('lost reply persists only original request across restart and never produces a replacement POST',async()=>{const store=new Map();const x=setup({store,hook:({url,o,response})=>{if(o.method==='POST')throw Error('lost');return response(url,o);}});await tick();await x.client.lookup('cases',C);await x.client.acknowledge();const original=JSON.parse(x.calls.find(c=>c.o.method==='POST').o.body).requestId;assert.deepEqual([...store.values()],[original]);assert.equal(JSON.stringify([...store]).includes(C),false);await x.client.lookup('cases',C);await x.client.acknowledge();assert.equal(x.calls.filter(c=>c.o.method==='POST').length,1);x.client.destroy();
+ const y=setup({store});await tick();assert.match(y.calls[0].url,/op=receipt/);assert.match(y.calls[0].url,new RegExp(original));await y.client.lookup('cases',C);await y.client.acknowledge();assert.equal(y.calls.filter(c=>c.o.method==='POST').length,0);assert.equal(store.size,1);y.client.destroy();});
+test('storage failure prevents any acknowledgement write',async()=>{const x=setup({blocked:true});await tick();await x.client.lookup('cases',C);await x.client.acknowledge();assert.equal(x.calls.some(c=>c.o.method==='POST'),false);assert.match(text(x.root),/not sent/);x.client.destroy();});
+test('destroy/pause aborts the in-flight request and late reply cannot restore private detail',async()=>{let release;const x=setup({hook:({url,o,response})=>url.includes('op=lookup')?new Promise(r=>release=()=>r(response(url,o))):response(url,o)});await tick();const work=x.client.lookup('cases',C);await tick();x.client.destroy();assert.equal(x.calls.at(-1).o.signal.aborted,true);release();await work;assert.equal(text(x.root),'');assert.equal(x.timers.size,0);});
+test('access loss and changed session reject pending data',async()=>{let release;const x=setup({hook:({url,o,response})=>url.includes('op=lookup')?new Promise(r=>release=()=>r(response(url,o))):response(url,o)});await tick();const work=x.client.lookup('cases',C);x.deactivate();release();await work;assert.equal(text(x.root).includes(C),false);x.client.destroy();
+ const y=setup({hook:()=>new Response('{}',{status:403})});await tick();assert.equal(y.lost,1);assert.equal(text(y.root).includes(C),false);y.client.destroy();});
+test('stale and wrong nonce/mode/owner/session replies are rejected without detail or write',async()=>{for(const change of [{live:true},{nonce:O},{ownerId:R},{sessionRef:R},{observedAt:1}]){const x=setup({hook:({url,o,response})=>response(url,o,change)});await tick();assert.equal(text(x.root).includes(C),false);assert.equal(x.calls.some(c=>c.o.method==='POST'),false);x.client.destroy();}});
+test('cached data, expired evidence and clock regression cannot acknowledge',async()=>{const x=setup();await tick();await x.client.lookup('cases',C);x.advance(60001);await x.client.acknowledge();assert.equal(x.calls.some(c=>c.o.method==='POST'),false);x.client.destroy();const y=setup();await tick();await y.client.lookup('cases',C);y.advance(-1);await y.client.acknowledge();assert.equal(y.calls.some(c=>c.o.method==='POST'),false);y.client.destroy();const z=setup({hook:({url,o,response})=>{const r=response(url,o);r.headers.set('cf-cache-status','HIT');return r;}});await tick();assert.equal(text(z.root).includes(C),false);z.client.destroy();});
+test('old original receipt reports new attention without acknowledgement of the new generation',async()=>{const store=new Map([['rr-command-ack-request-v1:'+O,R]]);const x=setup({store,hook:({url,o,response,ack})=>response(url,o,{result:{requestId:R,acknowledgement:ack({requestId:R}),isCurrent:false}})});await tick();assert.match(text(x.root),/Newer evidence still needs attention/);assert.equal(x.calls.some(c=>c.o.method==='POST'),false);x.client.destroy();});

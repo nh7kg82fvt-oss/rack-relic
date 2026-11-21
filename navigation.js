@@ -1,7 +1,7 @@
 /* Rack Relic page navigation. Static server rewrites preserve deep-link URLs. */
 (()=>{'use strict';
 const main=document.querySelector('main'),dialog=document.getElementById('detail-dialog'),detail=document.getElementById('detail-content');if(!main||!dialog||!detail)return;
-const $=id=>document.getElementById(id),categoryMap={clothing:'Clothing',sneakers:'Sneakers',bags:'Bags',accessories:'Accessories'},styles=['vintage','streetwear','y2k','minimalist','sportswear','designer'],brands=['Louis Vuitton','Nike','Jordan','Gucci','Adidas','Vintage','Carhartt','Stussy'];
+const $=id=>document.getElementById(id),categoryMap={clothing:'Clothing',sneakers:'Sneakers',bags:'Bags',accessories:'Accessories',sunglasses:'Sunglasses'},styles=['vintage','streetwear','y2k','minimalist','sportswear','designer'],brands=['Louis Vuitton','Nike','Jordan','Gucci','Adidas','Vintage','Carhartt','Stussy'];
 const prices={'under-25':{min:'0',max:'24.99',label:'Under $25'},'25-50':{min:'25',max:'50',label:'$25–$50'},'50-100':{min:'50',max:'100',label:'$50–$100'},'over-100':{min:'100.01',label:'Over $100'}};
 let current=null,lastRenderedPath=location.pathname+location.search,draftDirty=false;const uuid=value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value||''),slug=value=>value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const community=$('community'),discovery=$('discover-relics');if(community&&discovery)main.insertBefore(community,discovery);

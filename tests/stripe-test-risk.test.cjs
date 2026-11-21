@@ -26,7 +26,7 @@ test('server repository rejects production project, non-service keys, origin sub
  const key='sb_secret_fixture';
  for(const projectUrl of ['https://zrfztnbyynrdzfeblkeq.supabase.co','http://abcdefghijklmnopqrst.supabase.co','https://abcdefghijklmnopqrst.supabase.co.evil.example','https://abcdefghijklmnopqrst.supabase.co/path'])assert.throws(()=>createTestOrderRepository({projectUrl,serviceKey:key}));
  assert.throws(()=>createTestOrderRepository({projectUrl:'https://abcdefghijklmnopqrst.supabase.co',serviceKey:'sb_publishable_fixture'}));
- const r=createTestOrderRepository({projectUrl:'https://abcdefghijklmnopqrst.supabase.co',serviceKey:key,fetchImpl:async()=>Response.json({id:order.orderId},{headers:{'x-vercel-cache':'MISS','cf-cache-status':'HIT'}})});
+ const r=createTestOrderRepository({projectUrl:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',serviceKey:key,fetchImpl:async()=>Response.json({id:order.orderId},{headers:{'x-vercel-cache':'MISS','cf-cache-status':'HIT'}})});
  await assert.rejects(r.memberOrders({authorization:'Bearer fixture'}),/Cached/);
 });
 test('webhook factory defaults closed and never reads a body when disabled',async()=>{

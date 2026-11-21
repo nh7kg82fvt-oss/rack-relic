@@ -8,10 +8,20 @@ function input(){return {orderId,buyerId:'22222222-2222-4222-8222-222222222222',
 const settings=()=>({livemode:false,status:'active',head_office:{address}});
 const registrations=()=>({object:'list',has_more:false,data:[{livemode:false,status:'active',active_from:Math.floor(NOW/1000)-100,expires_at:null,country:'US',country_options:{us:{type:'state_sales_tax',state:'WA'}}}]});
 function calculation(tax=310,reason='standard_rated'){return {livemode:false,id:'taxcalc_fixture',currency:'usd',tax_amount_exclusive:tax,tax_amount_inclusive:0,amount_total:3100+tax,expires_at:Math.floor(NOW/1000)+86400,line_items:{has_more:false,data:[{amount:2500,tax_code:'txcd_30011000',reference:orderId+'_item'},{amount:100,tax_code:'txcd_30011000',reference:orderId+'_buyer_fee'}]},tax_breakdown:[{amount:tax,inclusive:false,tax_rate_details:{country:'US'},taxability_reason:reason}]};}
-function client({s=settings(),r=registrations(),c=calculation(),fail}={}){const calls=[];return {calls,c:createStripeTestTaxClient({secretKey:'sk_test_fixture',clock:()=>NOW,fetchImpl:async(url,opts)=>{calls.push({url,opts});if(fail)throw Error('private address and key');return {ok:true,json:async()=>calls.length===1?s:calls.length===2?r:c};}})};}
+function client({s=settings(),r=registrations(),c=calculation(),fail,secretKey='sk_test_fixture'}={}){const calls=[];return {calls,c:createStripeTestTaxClient({secretKey,clock:()=>NOW,fetchImpl:async(url,opts)=>{calls.push({url,opts});if(fail)throw Error('private address and key');return {ok:true,json:async()=>calls.length===1?s:calls.length===2?r:c};}})};}
 test('requires test keys and refuses incomplete or live tax configuration',async()=>{
- for(const key of [undefined,'','sk_live_fixture'])assert.throws(()=>createStripeTestTaxClient({secretKey:key}));
+ for(const key of [undefined,null,1,'','sk_live_fixture','rk_live_fixture','rk_test_','rk_test_bad-key','rk_test_fixture\n','pk_test_fixture','sk_org_fixture'])assert.throws(()=>createStripeTestTaxClient({secretKey:key}));
  for(const patch of [{status:'pending'},{livemode:true},{head_office:null}]){const t=client({s:{...settings(),...patch}});await assert.rejects(t.c.quote(input()));assert.equal(t.calls.length,1);}
+});
+test('restricted test keys complete the same tax readiness and calculation requests',async()=>{
+ const t=client({secretKey:'rk_test_fixture'}),taxQuote=await t.c.quote(input());
+ assert.equal(taxQuote.amountCents,310);
+ assert.deepEqual(t.calls.map(c=>[c.url,c.opts.method]),[
+  ['https://api.stripe.com/v1/tax/settings','GET'],
+  ['https://api.stripe.com/v1/tax/registrations?status=active&limit=100','GET'],
+  ['https://api.stripe.com/v1/tax/calculations','POST']
+ ]);
+ for(const call of t.calls){assert.equal(call.opts.headers.Authorization,'Bearer rk_test_fixture');assert.equal(call.opts.headers['Stripe-Version'],'2025-02-24.acacia');}
 });
 test('no registration or an expired, incomplete, live or unregistered-state response blocks calculation',async()=>{
  const fixtures=[{...registrations(),data:[]},{...registrations(),has_more:true}];

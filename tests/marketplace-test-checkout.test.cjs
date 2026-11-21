@@ -114,3 +114,21 @@ test('reconciliation freezes expected amounts before an asynchronous provider re
  }});
  await assert.rejects(c.retrieveCheckout({sessionId:'cs_test_fixture',snapshot}),/does not match/);
 });
+
+const acceptance=require('../server/test_environment_registry.cjs').TEST_ENVIRONMENTS.acceptance;
+function acceptanceSession(){return {...session(),metadata:{order_id:orderId,integration:'rack_relic_test_acceptance_v1',rr_test_environment:acceptance.id}};}
+function acceptanceClient({account=acceptance.accountId,live=false,headers={},sessionPatch={}}={}){const calls=[];return {calls,client:createStripeTestCheckoutClient({secretKey:'rk_test_fixture',accountId:acceptance.accountId,returnOrigin:acceptance.previewOrigin,fetchImpl:async(url,opts)=>{calls.push({url,opts});if(url.endsWith('/v1/account'))return Response.json({object:'account',id:account,country:'US'},{headers});if(url.endsWith('/v1/balance'))return Response.json({livemode:live},{headers});return Response.json({...acceptanceSession(),status:'open',payment_status:'unpaid',...sessionPatch},{headers});}})};}
+test('acceptance checkout verifies actual sandbox before creating its own stable metadata and callbacks',async()=>{
+ const x=acceptanceClient();await x.client.createCheckout(input());await x.client.createCheckout(input());const writes=x.calls.filter(c=>c.opts.method==='POST');assert.equal(writes.length,2);assert.equal(writes[0].opts.body,writes[1].opts.body);const form=new URLSearchParams(writes[0].opts.body);assert.equal(form.get('success_url'),acceptance.returnUrl+'?view=return&session_id={CHECKOUT_SESSION_ID}');assert.equal(form.get('metadata[integration]'),'rack_relic_test_acceptance_v1');assert.equal(form.get('metadata[rr_test_environment]'),acceptance.id);assert.equal(form.get('payment_intent_data[metadata][rr_test_environment]'),acceptance.id);assert.equal(writes[0].opts.headers['Idempotency-Key'],'rr_test_checkout_acceptance_v1_'+orderId);
+ const before=x.calls.length;await x.client.retrieveCheckout({sessionId:'cs_test_fixture',snapshot:buildTestCheckout(input())});assert.ok(x.calls.slice(before).every(c=>c.opts.method==='GET'));
+});
+test('acceptance checkout rejects mixed callback/account and fresh foreign, live or cached identity before any POST',async()=>{
+ for(const args of [{accountId:acceptance.accountId},{accountId:acceptance.accountId,returnOrigin:'https://rack-relic-git-test-only-marketplace-foundation-rack-relic.vercel.app'},{accountId:'acct_1UWJZuGVbz9Pnhxd',returnOrigin:acceptance.previewOrigin}])assert.throws(()=>createStripeTestCheckoutClient({secretKey:'sk_test_fixture',...args}));
+ for(const config of [{account:'acct_1UWJZuGVbz9Pnhxd'},{live:true},{headers:{age:'1'}},{headers:{'cf-cache-status':'HIT'}}]){const x=acceptanceClient(config);await assert.rejects(x.client.createCheckout(input()));assert.equal(x.calls.some(c=>c.opts.method==='POST'),false);}
+ const wrong=acceptanceClient({sessionPatch:{metadata:session().metadata}});await assert.rejects(wrong.client.createCheckout(input()));
+});
+test('same-secret signed checkout events cannot cross legacy/acceptance account or metadata namespaces',()=>{
+ const e={...event(),account:acceptance.accountId,data:{object:acceptanceSession()}},s=signed(e);const opts={secret:'whsec_fixture',nowSeconds:1000,accountId:acceptance.accountId};assert.equal(verifyStripeTestEvent(s.raw,s.signature,opts).account,acceptance.accountId);assert.throws(()=>verifyStripeTestEvent(s.raw,s.signature,{...opts,accountId:'acct_1UWJZuGVbz9Pnhxd'}));
+ const legacy=signed(event());assert.throws(()=>verifyStripeTestEvent(legacy.raw,legacy.signature,opts));
+ assert.equal(matchesPaidTestOrder(e,{...buildTestCheckout(input()),sessionId:'cs_test_fixture'},{accountId:acceptance.accountId}),true);assert.equal(matchesPaidTestOrder(e,{...buildTestCheckout(input()),sessionId:'cs_test_fixture'}),false);
+});
