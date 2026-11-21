@@ -42,11 +42,15 @@ function createSellerGetPreflight(raw={}){
     // Read the ACTUAL response object. Never add a version/header or rebuild a Response.
     const h=response.headers,stamp=Date.parse(h.get('date')||''),version=h.get('stripe-version'),requestId=h.get('request-id');
     const validRequestId=typeof requestId==='string'&&/^req_[A-Za-z0-9]{1,200}$/.test(requestId),dateWithin30s=Number.isFinite(stamp)&&Math.abs(stamp-observedAt)<=30000;
-    const observation={method:'GET',path:PATHS[index-1],observedAt,
+    // API v2 requires a pinned request version; its SDK accepts responses without an echo.
+    // Tolerate an absent echo only on this exact list read; preserve it as missing evidence.
+    const responseVersionVerified=version===API_VERSION,missingV2Echo=PATHS[index-1]===LIST_PATH&&version===null;
+    const observation={method:'GET',path:PATHS[index-1],observedAt,requestedStripeVersion:API_VERSION,
      stripeVersion:version===API_VERSION?API_VERSION:version===null?null:'UNEXPECTED',
+     responseVersionVerified,versionEvidence:responseVersionVerified?'request-and-response-header':missingV2Echo?'request-header-only':'unverified',
      requestId:validRequestId?requestId:null,dateWithin30s};
     evidence.push(observation);
-    if(version!==API_VERSION)hold('returned_version');
+    if(!responseVersionVerified&&!missingV2Echo)hold('returned_version');
     if(!dateWithin30s)hold('returned_date');
     if(!validRequestId||requestIds.has(requestId))hold('request_id');requestIds.add(requestId);
     return response;
@@ -72,6 +76,7 @@ function createSellerGetPreflight(raw={}){
    return Object.freeze({kind:'seller-get-response-preflight-v1',sourceOnly:true,accountId:ACCOUNT,mode:'test',
     returnedItemCount,nextPagePresent,pagesRead:1,inventoryComplete:false,nativeExecutionVerified:false,
     sellerReadinessVerified:false,actionGrant:false,futurePostHeaderOrTimingGuaranteed:false,rawBodiesPersisted:false,
+    requestedStripeVersion:API_VERSION,allResponseVersionsEchoed:evidence.every(v=>v.responseVersionVerified),
     observations:Object.freeze(evidence.map(v=>Object.freeze({...v})))});
   }catch(error){
    if(error instanceof SellerGetPreflightHeld)throw new SellerGetPreflightHeld(error.code,evidence.map(v=>Object.freeze({...v})));
