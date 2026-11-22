@@ -167,16 +167,23 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
    get statusCode(){return s.res.statusCode;},set statusCode(value){check(scope);s.res.statusCode=value;},
    get headersSent(){return s.res.headersSent;},get writableEnded(){return s.res.writableEnded;},
    setHeader(name,value){check(scope);s.res.setHeader(name,value);},
-   end(value){check(scope);s.res.end(value);}
+   end(value){
+    check(scope);
+    // Apply at the authenticated sink so the passive form view cannot overwrite it.
+    // Errors, POST results and confidential provider redirects keep no-referrer.
+    if(s.req.method==='GET'&&s.res.statusCode===200&&s.identity)s.res.setHeader('Referrer-Policy','same-origin');
+    s.res.end(value);
+   }
   });
  }
- async function readWire(scope,response,url,max,{provider=false}={}){
+ async function readWire(scope,response,url,max,{provider=false,allowMissingVersionEcho=false}={}){
   if(!Number.isInteger(response?.status)||response.status<200||response.status>299||response.ok!==true||!provider&&response.status!==200||response?.url!==url||response?.redirected!==false||
    !response?.headers?.get||!response?.body?.getReader)hold('invalid_wire');
   const h=response.headers;uncached(h);
-  const stamp=Date.parse(h.get('date')||''),length=h.get('content-length');
+  const stamp=Date.parse(h.get('date')||''),length=h.get('content-length'),returnedVersion=provider?h.get('stripe-version'):null;
   if(!Number.isFinite(stamp)||Math.abs(stamp-check(scope))>30000||!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(h.get('content-type')||'')||
-   length!==null&&(!/^(0|[1-9][0-9]*)$/.test(length)||Number(length)>max)||provider&&h.get('stripe-version')!==API_VERSION)hold('invalid_wire');
+   length!==null&&(!/^(0|[1-9][0-9]*)$/.test(length)||Number(length)>max)||
+   provider&&returnedVersion!==API_VERSION&&!(allowMissingVersionEcho&&returnedVersion===null))hold('invalid_wire');
   const reader=response.body.getReader(),parts=[];let size=0;
   try{
    for(;;){const next=await wait(scope,()=>reader.read());if(next.done)break;if(!(next.value instanceof Uint8Array)||(size+=next.value.length)>max)hold('invalid_wire');parts.push(Buffer.from(next.value));}
@@ -258,12 +265,16 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
   }else if(method==='GET'&&/^\/v2\/core\/accounts\/acct_[A-Za-z0-9]+$/.test(u.pathname)){
    if(u.pathname.slice('/v2/core/accounts/'.length)!==(s.originalAccount||s.provisionalAccount)||connected!==undefined)hold('provider_path_not_allowed');
   }else hold('provider_path_not_allowed');
+  // Only the already-guarded v2 account/create/link paths may omit response metadata.
+  // The request pin above remains mandatory; an absent echo is not independent version proof.
+  const allowMissingVersionEcho=method==='POST'&&['/v2/core/accounts','/v2/core/account_links'].includes(u.pathname)&&!u.search||
+   method==='GET'&&/^\/v2\/core\/accounts\/acct_[A-Za-z0-9]+$/.test(u.pathname);
   const response=await wait(scope,()=>fetchImpl(url,{...init,headers:{...init.headers,'Accept-Encoding':'identity'},signal:AbortSignal.any([s.signal,init.signal])}));
   await current(scope);let used=false;
   return Object.freeze({ok:response?.ok,status:response?.status,headers:response?.headers,
    async json(){
     if(used)hold('provider_body_already_read');used=true;
-    const value=await readWire(scope,response,url,MAX_PROVIDER,{provider:true});
+    const value=await readWire(scope,response,url,MAX_PROVIDER,{provider:true,allowMissingVersionEcho});
     if(method==='POST'&&u.pathname==='/v2/core/accounts'){
      if(value?.object!=='v2.core.account'||value.livemode!==false||!account(value.id))hold('invalid_created_account');
      s.provisionalAccount=value.id;
@@ -293,13 +304,20 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
   s.redirectAttempted=true;s.res.statusCode=303;check(scope);s.res.setHeader('Location',s.sensitive.onboardingUrl);check(scope);s.res.end();
  }
  async function body(scope,kind){
-  const s=state(scope),req=s.req;let value=req.body;
+  const s=state(scope),req=s.req;let value=req.body,replayAction=null;
   if(value!==undefined&&typeof value!=='string'&&!Buffer.isBuffer(value)){
-   const object=exact(value,['action'],400),allowed=kind==='begin'?['begin']:['observe','refresh'];
-   if(!allowed.includes(object.action))hold('invalid_action',400);return object.action;
+   const allowed=kind==='begin'?['begin']:['observe','refresh'];
+   if(value&&Object.getPrototypeOf(value)===null){
+    const d=Object.getOwnPropertyDescriptor(value,'action');
+    if(Reflect.ownKeys(value).length!==1||!d||!Object.hasOwn(d,'value')||!d.enumerable)hold('invalid_data',400);
+    if(!allowed.includes(d.value))hold('invalid_action',400);replayAction=d.value;
+   }else{
+    const object=exact(value,['action'],400);
+    if(!allowed.includes(object.action))hold('invalid_action',400);return object.action;
+   }
   }
   let bytes;
-  if(value!==undefined)bytes=Buffer.isBuffer(value)?Buffer.from(value):Buffer.from(value,'utf8');
+  if(value!==undefined&&replayAction===null)bytes=Buffer.isBuffer(value)?Buffer.from(value):Buffer.from(value,'utf8');
   else{
    const reader=req[Symbol.asyncIterator](),parts=[];let size=0;
    try{for(;;){const next=await wait(scope,()=>reader.next());if(next.done)break;const part=Buffer.from(next.value);if((size+=part.length)>64)hold('body_too_large',413);parts.push(part);}bytes=Buffer.concat(parts);}
@@ -308,6 +326,7 @@ function createClosedOwnerFixtureRuntime({enabled=false,configuration:rawConfigu
   try{
    if(bytes.length>64)hold('body_too_large',413);let text;
    try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{hold('invalid_body',400);}
+   if(replayAction!==null&&text!=='action='+replayAction)hold('invalid_action',400);
    if(kind==='begin'){if(text!=='action=begin')hold('invalid_action',400);return 'begin';}
    if(!['action=observe','action=refresh'].includes(text))hold('invalid_action',400);return text.slice(7);
   }finally{bytes?.fill(0);}
