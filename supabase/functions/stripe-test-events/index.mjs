@@ -762,8 +762,8 @@ const PINS = Object.freeze({version: 'rr-test-case-wake-enrollment-v2', purpose:
   accountId: 'acct_1UXdWBGppSOhWnq8', branch: 'codex/prelaunch-seller-protections',
   ownerEmail: 'wayne@rackrelic.com', sender: 'alerts@alerts.rackrelic.com', recipient: 'wayne@rackrelic.com',
   transportId: 'resend_rack_owner_v1', destinationId: 'rack_owner_wayne_v1', domainId: 'f4adcee8-bc22-4597-9aae-6d9cd6780e6a',
-  receiptSlug: 'rack-alert-receipts', receiptRevision: 4,
-  receiptSha256: '7a23e5695a0126f88b48f31b564b1172492f7e4b114c3c85f19de15fc7e8fbf3'});
+  receiptSlug: 'rack-alert-receipts', receiptRevision: 5,
+  receiptSha256: 'edb571935e13aec947353c3099c214e0d641ab462e62a3383557d8d26b74264b'});
 const FACTS = Object.freeze(['rack_team_and_domain_verified', 'transactional_free_and_paid_extras_off', 'tracking_and_receiving_off',
   'sending_key_domain_only', 'exact_receiver_code_and_secrets_verified', 'receipt_rpc_grants_and_denials_verified']);
 const EXTRA = ['workerId', 'ownerDecisionReference', 'evidenceReference', 'installerReference', 'checkedAt', 'expiresAt', 'revoked', 'facts','alertScope'];

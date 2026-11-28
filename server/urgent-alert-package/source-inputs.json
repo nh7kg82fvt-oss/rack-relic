@@ -44,7 +44,7 @@
     {
       "path": "source/server/urgent_alert_enrollment.cjs",
       "bytes": 7816,
-      "sha256": "718cd57356497a9eb7e647eb978725a7bac2f4aac5117b73080cc2ce680a6eed"
+      "sha256": "4982fe66fa2cfe28f41962d120426c641254c872d3be74b75aa254084299f60b"
     },
     {
       "path": "source/server/urgent_alert_scope.cjs",
