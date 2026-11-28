@@ -1,0 +1,6 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{createHash}=require('node:crypto');
+const {review,FACTS,RECEIVER_SOURCE_SHA256}=require('../server/owner_alert_rehearsal_runtime.cjs');
+const {PINS}=require('../server/urgent-alert-package/source/server/urgent_alert_enrollment.cjs');
+test('both alert activation reviews pin the exact current callback bytes and version',()=>{const actual=createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../supabase/functions/rack-alert-receipts/index.ts'))).digest('hex');assert.equal(PINS.receiptRevision,5);assert.equal(PINS.receiptSha256,actual);assert.equal(RECEIVER_SOURCE_SHA256,actual);});
+test('manual setup review requires v5 and rejects the old callback identity',()=>{const now=1800000000000,r={version:'rr-owner-alert-action-review-v1',team:'rackrelic',domainId:'f4adcee8-bc22-4597-9aae-6d9cd6780e6a',receiverSource:RECEIVER_SOURCE_SHA256,receiverRevision:'v5',evidenceReference:'owner_review_fixture_only',facts:FACTS,checkedAt:now,expiresAt:now+300000};assert.equal(review(r,now),r);assert.throws(()=>review({...r,receiverRevision:'v4'},now));assert.throws(()=>review({...r,receiverSource:'7a23e5695a0126f88b48f31b564b1172492f7e4b114c3c85f19de15fc7e8fbf3'},now));});

@@ -15,7 +15,7 @@ const COMMAND='/api/command-center';
 const DOMAIN_ID='f4adcee8-bc22-4597-9aae-6d9cd6780e6a';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const RECEIVER=E.projectUrl+'/functions/v1/rack-alert-receipts';
-const SOURCE='7a23e5695a0126f88b48f31b564b1172492f7e4b114c3c85f19de15fc7e8fbf3';
+const SOURCE='edb571935e13aec947353c3099c214e0d641ab462e62a3383557d8d26b74264b';
 const FACTS=['rack_team_and_domain_verified','transactional_free_and_paid_extras_off','tracking_and_receiving_off',
  'sending_key_domain_only','exact_receiver_code_and_secrets_verified','receipt_rpc_grants_and_denials_verified'];
 const fail=()=>{throw Error('OWNER_ALERT_REHEARSAL_UNVERIFIED');};
@@ -38,7 +38,7 @@ async function body(req){
 function review(value,now){
  if(!value||Object.keys(value).sort().join(',')!=='checkedAt,domainId,evidenceReference,expiresAt,facts,receiverRevision,receiverSource,team,version'||
   value.version!=='rr-owner-alert-action-review-v1'||value.team!=='rackrelic'||value.domainId!==DOMAIN_ID||value.receiverSource!==SOURCE||
-  typeof value.receiverRevision!=='string'||!/^v[1-9][0-9]{0,5}$/.test(value.receiverRevision)||
+  value.receiverRevision!=='v5'||
   typeof value.evidenceReference!=='string'||!/^owner_review_[A-Za-z0-9_-]{8,80}$/.test(value.evidenceReference)||
   !Array.isArray(value.facts)||JSON.stringify(value.facts)!==JSON.stringify(FACTS)||
   !Number.isSafeInteger(value.checkedAt)||value.checkedAt>now+1000||value.checkedAt<now-300000||
