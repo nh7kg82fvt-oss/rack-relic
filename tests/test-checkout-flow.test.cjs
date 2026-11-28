@@ -15,7 +15,7 @@ const definitions={rr_test_cancel_preparation:['p_order','p_buyer'],rr_test_quot
 before(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role;');for(const name of ['20261030_order_ledger.sql','20261030_payment_recovery.sql','20261030_checkout_attempts.sql','20261030_refund_receipts.sql','20261030_refund_requests.sql','20261030_checkout_quote_limits.sql','20261030_checkout_quote_refresh.sql','20261031_cancel_preparation.sql'])await db.exec(fs.readFileSync(require.resolve('../supabase/test/'+name),'utf8'));});
 after(async()=>db?.close());
 beforeEach(async()=>{calls=[];quoteCalls=0;taxCents=310;sessions=new Map();failCreate=false;failFinish=false;failSave=false;quoteFailure=false;await db.exec('truncate rr_sandbox.catalog, rr_sandbox.checkout_quote_limits cascade');await db.query("insert into rr_sandbox.catalog(id,seller_id,title,price_cents) values($1,$2,'Synthetic test jacket',2500)",[listingId,seller]);});
-function repository(){return createTestOrderRepository({projectUrl:'https://abcdefghijklmnopqrst.supabase.co',serviceKey:'sb_secret_fixture',fetchImpl:async(url,opts)=>{
+function repository(){return createTestOrderRepository({projectUrl:'https://zvtaqzcqfdjpuwnlpzln.supabase.co',serviceKey:'sb_secret_fixture',fetchImpl:async(url,opts)=>{
  if(url.endsWith('/auth/v1/user')){const id={'Bearer buyer':buyer,'Bearer seller':seller,'Bearer other':other}[opts.headers.Authorization];return Response.json(id?{id}:{},{status:id?200:401});}
  const name=url.split('/').pop(),p=JSON.parse(opts.body),keys=definitions[name];assert.ok(keys,name);
  if(name==='rr_test_finish_checkout'&&failFinish){failFinish=false;throw Error('temporary database interruption');}

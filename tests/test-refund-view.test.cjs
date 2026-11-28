@@ -1,8 +1,11 @@
+const ENV_ROWS=require('../test-environments.js');
+const LEGACY_CONFIG={environmentId:ENV_ROWS[0].id,projectUrl:ENV_ROWS[0].projectUrl,returnUrl:ENV_ROWS[0].returnUrl};
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 async function render(order){
  const el=()=>({children:[],textContent:'',addEventListener(){},append(...nodes){this.children.push(...nodes);},replaceChildren(){this.children=[];}});
  const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,el());return nodes.get(id);};
- const context={document:{getElementById:get,createElement:el},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:{getItem:()=>JSON.stringify({token:'fixture',member:'buyer'}),removeItem(){}},localStorage:{},createTestEmailSignin:()=>({}),URLSearchParams,Intl,AbortSignal,fetch:async url=>({ok:true,json:async()=>url.endsWith('config')?{notice:'fixture',publishableKey:'fixture'}:{orders:[{id:'fixture',buyer_id:'buyer',state:'paid',total_cents:3427,...order}]}})};
+ const context={document:{getElementById:get,createElement:el},location:{search:'',hash:'',pathname:'/api/test-marketplace'},history:{replaceState(){}},sessionStorage:{getItem:()=>JSON.stringify({token:'fixture',member:'buyer'}),removeItem(){}},localStorage:{},createTestEmailSignin:()=>({}),URLSearchParams,Intl,AbortSignal,fetch:async url=>({ok:true,json:async()=>url.endsWith('config')?{...LEGACY_CONFIG,notice:'fixture',publishableKey:'fixture'}:{orders:[{id:'fixture',buyer_id:'buyer',state:'paid',total_cents:3427,...order}]}})};
+ context.RackRelicTestEnvironments=ENV_ROWS;
  vm.runInNewContext(fs.readFileSync(require.resolve('../test-marketplace.js'),'utf8'),context);
  await new Promise(resolve=>setImmediate(resolve));
  return get('orders').children[0].children.map(n=>n.textContent).join('\n');

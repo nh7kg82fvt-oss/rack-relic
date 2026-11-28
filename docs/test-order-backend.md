@@ -1,10 +1,18 @@
 # Isolated test checkout and order backend
 
+Current owner decision, November 19, 2026: NEW orders use **5% of item subtotal plus $1.00 once per order**, with shipping and applicable tax separate. A $25 item has a $2.25 buyer platform fee. New source policy is `rr-fees-v3`; historical `rr-fees-v2` remains 5% plus $0.50 and `rr-fees-v1` remains 4%. Saved orders, quotes, receipts, refunds and unknown outcomes retain their original versions and amounts. The $200 COMPLETE order cap and one-unsettled-order limit remain required. Live checkout and financial release stay CLOSED. Matching closed database compatibility and hosted acceptance remain separate requirements; changing copy or code does not perform either.
+
+The earlier design and test evidence below is historical where it describes v2 as current or uninstalled. It is preserved rather than relabelled as new v3 acceptance.
+
+---
+
 This branch connects a private test checkout page to the separate staging database and Stripe test account. Public checkout remains closed. Production is not changed. The test page is `/api/test-marketplace` on the `test-only-marketplace-foundation` Vercel preview only, behind existing Vercel Standard Protection and an additional staging-member allowlist.
+
+See [the current fee and seller-cost implementation](fee-policy-and-seller-costs.md) for the pending additive migrations and private consent rehearsal. These new migrations have not been applied remotely.
 
 ## What is implemented
 
-The private page signs in through staging Supabase Auth using a password or a one-time email link, reserves a synthetic $25 jacket, adds the 4% buyer fee, obtains a Stripe test tax calculation, and opens hosted Stripe Checkout. Shipping is explicitly a **$5 simulation**. No carrier quote, postage purchase or seller payout occurs. Buyer and seller views read their own orders from the server. Returning from Stripe is never treated as proof of payment.
+The private page signs in through staging Supabase Auth using a password or a one-time email link, reserves a synthetic $25 jacket, adds the versioned buyer fee (new v2 orders: 5% plus $0.50 once per order; historical v1 orders retain 4% and no fixed fee), obtains a Stripe test tax calculation, and opens hosted Stripe Checkout. Shipping is explicitly a **$5 simulation**. No carrier quote, postage purchase or seller payout occurs. Buyer and seller views read their own orders from the server. Returning from Stripe is never treated as proof of payment.
 
 The server derives price and identity from the authenticated reservation. It persists immutable quote evidence before creating Checkout, atomically claims one creation attempt, saves the session ID before attachment, and recovers known sessions with GET only. An uncertain creation with no saved session remains held for reconciliation; a retry cannot blindly create another payment. Competing requests with different destinations cannot silently use each other's quote.
 
