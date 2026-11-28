@@ -17,8 +17,9 @@
   if(!win||!doc||typeof fetchImpl!=='function')return;
   const status=doc.getElementById('reset-status'),form=doc.getElementById('reset-form'),pw=doc.getElementById('new-password'),confirm=doc.getElementById('confirm-password');
   if(!status||!form||!pw||!confirm)return;
-  let session=null,config=null,used=false,timer;
-  const clear=()=>{session=null;config=null;pw.value='';confirm.value='';form.hidden=true;};
+  const codeForm=doc.getElementById('recovery-code-form'),codeInput=doc.getElementById('recovery-code');
+  let session=null,config=null,used=false,codeUsed=false,timer,headers;
+  const clear=()=>{session=null;config=null;pw.value='';confirm.value='';form.hidden=true;if(codeInput)codeInput.value='';if(codeForm)codeForm.hidden=true;};
   const say=t=>{status.textContent=t;};
   async function call(url,init){
    if(!session||clock()>=session.deadline)fail();
@@ -27,17 +28,35 @@
    return response;
   }
   async function json(response){if(response.status!==200||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')||''))fail();const text=await response.text();if(text.length>16384)fail();return JSON.parse(text);}
+  async function showPassword(){
+   headers={apikey:config.publicKey,Authorization:'Bearer '+session.token};
+   if(!owner(await json(await call(PROJECT+'/auth/v1/user',{method:'GET',headers}))))fail();
+   if(codeForm)codeForm.hidden=true;
+   form.hidden=false;say('Verified recovery for Wayne’s restored test account. Enter your new password privately.');
+  }
   try{
    const hash=win.location.hash;
    // Remove emailed credentials before any network activity; never use storage.
    win.history.replaceState(null,'','/reset-password.html');
    if(win.location.origin!==ORIGIN)fail();
-   session=fragment(hash,clock(),s=>win.atob(s.replace(/-/g,'+').replace(/_/g,'/')));
+   session=hash?fragment(hash,clock(),s=>win.atob(s.replace(/-/g,'+').replace(/_/g,'/'))):{token:null,deadline:clock()+900000};
    const c=await json(await call(ORIGIN+'/api/recovery-reset-config',{method:'GET'}));
    if(c.project!==PROJECT||c.ownerId!==OWNER||c.email!==EMAIL||typeof c.publicKey!=='string'||c.publicKey.length>4096)fail();config=c;
-   const headers={apikey:config.publicKey,Authorization:'Bearer '+session.token};
-   if(!owner(await json(await call(PROJECT+'/auth/v1/user',{method:'GET',headers}))))fail();
-   form.hidden=false;say('Verified recovery link for Wayne’s restored test account. Enter your new password privately.');
+   if(session.token)await showPassword();
+   else{
+    if(!codeForm||!codeInput)fail();codeForm.hidden=false;say('Enter the six-digit recovery code from the newest email to wayne@rackrelic.com.');
+    codeForm.addEventListener('submit',async event=>{
+     event.preventDefault();if(event.isTrusted!==true||codeUsed||!session||!/^\d{6}$/.test(codeInput.value))return;
+     codeUsed=true;codeForm.hidden=true;const body=JSON.stringify({email:EMAIL,token:codeInput.value,type:'recovery'});codeInput.value='';
+     try{
+      const value=await json(await call(PROJECT+'/auth/v1/verify',{method:'POST',headers:{apikey:config.publicKey,'Content-Type':'application/json'},body}));
+      if(!owner(value.user)||typeof value.access_token!=='string'||value.access_token.length>8192||!/^[-A-Za-z0-9_]+\.[-A-Za-z0-9_]+\.[-A-Za-z0-9_]+$/.test(value.access_token))fail();
+      // Authenticated fixed-project verification, then fresh GetUser, is the authority.
+      // Never persist or refresh returned credentials, and never extend this page's deadline.
+      session.token=value.access_token;await showPassword();
+     }catch{clear();say('Recovery code could not be verified. Request a fresh code; no password was changed by this form.');}
+    });
+   }
    timer=win.setTimeout(()=>{clear();say('This recovery session expired. Request a fresh recovery email.');},session.deadline-clock());
    win.addEventListener('pagehide',clear,{once:true});
    form.addEventListener('submit',async event=>{
