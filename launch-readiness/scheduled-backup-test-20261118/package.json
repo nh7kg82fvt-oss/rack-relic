@@ -1,0 +1,15 @@
+{
+  "name": "rack-relic-immutable-backup-test",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Closed source-only immutable one-slot backup admission tests; no provider activation.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=tap tests/schedule-admission.test.cjs tests/schedule-ticket-repository.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.13"
+  }
+}

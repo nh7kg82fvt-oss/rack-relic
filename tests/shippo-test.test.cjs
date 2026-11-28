@@ -34,3 +34,9 @@ test('does not leak provider errors or automatically retry failed requests',asyn
  let calls=0; const c=createShippoTestClient({token:'shippo_test_fixture',fetchImpl:async()=>{calls++;throw Error('secret token and address');}});
  await assert.rejects(c.quote(input),e=>!e.message.includes('secret'));assert.equal(calls,1);
 });
+test('cached or mixed live rates cannot be accepted as test shipping evidence',async()=>{
+ for(const headers of [new Headers({age:'1'}),new Headers({'cf-cache-status':'HIT'}),new Headers({age:'invalid'})]){
+  const c=createShippoTestClient({token:'shippo_test_fixture',fetchImpl:async()=>({...reply({test:true,object_id:id,rates:[]}),headers})});await assert.rejects(c.quote(input),/Cached/);
+ }
+ const c=createShippoTestClient({token:'shippo_test_fixture',fetchImpl:async()=>reply({test:true,object_id:id,rates:[{test:false,object_id:rate,currency:'USD',amount:'7.25'}]})});await assert.rejects(c.quote(input),/test rates/);
+});

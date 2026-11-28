@@ -1,0 +1,11 @@
+{
+  "name": "rack-relic-closed-backup-followup",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {"node": ">=22.15"},
+  "scripts": {
+    "test": "node --test bundle.test.mjs rehearsal.test.cjs",
+    "test:native": "bash native-test.sh"
+  },
+  "devDependencies": {"esbuild": "0.25.12"}
+}

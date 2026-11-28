@@ -12,7 +12,7 @@ Scope: public browsing, profiles, private drafts, photos, messages and reports. 
 
 ## Support and moderation
 
-Wayne is the owner contact at wayne@rackrelic.com. An assigned support/moderation schedule still needs owner confirmation. Review submitted listing reports in the existing private administration tools. A report is an allegation; check evidence and record the reason before acting. Preserve relevant messages and listing references privately. Do not automatically suspend a member based solely on a report.
+Wayne is the owner contact at wayne@rackrelic.com and initially handles the support inbox and listing reports, as confirmed by the owner. No response deadline is promised. Review submitted listing reports in the existing private administration tools. A report is an allegation; check evidence and record the reason before acting. Preserve relevant messages and listing references privately. Do not automatically suspend a member based solely on a report.
 
 Review suspected counterfeits, unauthorized replicas and misleading brands in titles, brand fields, descriptions and tags, including names added only for exposure. Compare the listing text, photos and available evidence; an unfamiliar brand, low price or report alone does not establish a counterfeit. Record whether the concern is suspected authenticity, misleading branding or both. Request clarification or use existing moderation controls when supported by evidence; preserve the reason and listing reference privately. Do not claim automated authentication, blocking or removal without verified deployed controls.
 
@@ -25,6 +25,10 @@ Source code is versioned in GitHub; this does not back up database rows or uploa
 Restore only into a separate recovery environment. Verify representative profiles, draft/published/archived visibility, messages, reports and photo access, then confirm anonymous access cannot see private content. Do not overwrite production to test restore. Record backup time, recovery target and verification results privately. A written runbook alone is not restore proof. Paid backup or recovery resources require owner approval.
 
 ## Incident response
+
+The public monitor checks all twelve browsing routes, the twelve fictional demo descriptions, the disabled-buy source guard, valid web-manifest JSON and each same-origin JavaScript asset referenced by the home page. A successful HTTP response containing an HTML fallback does not pass a JavaScript asset check. Reads omit credentials, never follow redirects and have per-response time and size limits. These are source/HTTP checks; they do not execute the browser UI or prove authenticated member flows.
+
+For runtime logs, discover the currently available browser connection instead of assuming a stored browser ID remains available. Open only Rack Relic's Vercel project and verify that the production-error filter has finished loading. An unavailable browser is a monitoring coverage gap, not evidence of a website outage. Report the gap once, retain public checks, and record recovery only after the log results are visible. Do not start authentication or change access during scheduled checks. Local monitoring depends on the desktop app and browser being available.
 
 If private content becomes visible, stop affected publishing/photo access through existing controls, preserve evidence privately, and investigate permission checks. Keep checkout closed. If the website breaks after a release, use the last known-good Vercel deployment for website recovery; this does not roll back database changes. Changes to authentication, credentials or paid plans need the appropriate owner action.
 
